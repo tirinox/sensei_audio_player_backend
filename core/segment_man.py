@@ -28,8 +28,8 @@ class SegmentManager:
     def original_filename(self):
         return self._filename
 
-    def save(self):
-        json_filename = self.segments_filename(self._filename)
+    def save(self, save_as=None):
+        json_filename = self.segments_filename(save_as or self._filename)
         with open(json_filename, "w") as json_file:
             json.dump({
                 "filename": os.path.basename(self._filename),
@@ -89,3 +89,10 @@ class SegmentManager:
             text = v['text']
             v['text'] = convert_ruby_to_parenthesis(text)
             print(f"Converted '{text}' to '{v['text']}'")
+
+    def update_texts(self, new_sentences):
+        if len(new_sentences) != len(self.segments):
+            raise ValueError("Number of sentences does not match number of segments!")
+
+        for segment, new_text in zip(self.sorted_segments, new_sentences):
+            segment['text'] = new_text

@@ -28,7 +28,10 @@ def main():
 
     sentences = [s["text"] for s in seg.sorted_segments]
 
-    print(f.generate_furigana(sentences))
+    furiganed_sentences = f.generate_furigana(sentences)
+
+    seg.update_texts(furiganed_sentences)
+    seg.save(save_as="furigana_test")
 
 
 if __name__ == '__main__':
