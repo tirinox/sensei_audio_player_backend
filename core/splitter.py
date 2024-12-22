@@ -56,9 +56,9 @@ def load_audio_file(file_path):
     return AudioSegment.from_mp3(file_path)
 
 
-def split_file(audio_file, metadata):
+def split_file(audio_file, metadata, min_silence_len):
     metadata.clear()
-    non_silent_segments = detect_pieces(audio_file, min_silence_len=800)
+    non_silent_segments = detect_pieces(audio_file, min_silence_len=min_silence_len)
     for idx, (start, end) in enumerate(non_silent_segments):
         if not metadata.does_segment_exist(start, end):
             metadata.set_segment(start, end, "")

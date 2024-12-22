@@ -19,3 +19,7 @@ process-incoming: # Process incoming messages.
 .PHONY: upload
 upload: # Upload the audio files.
 	scripts/upload.sh
+
+.PHONY: remake
+remake: # Rescan the audio file using specified pause duration
+	python pg.py remake

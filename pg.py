@@ -5,7 +5,7 @@ import tqdm
 from dotenv import load_dotenv
 
 from core.config import AUDIO_SOURCE_PATH
-from core.file_man import waveform_out_path, get_all_mp3
+from core.file_man import waveform_out_path, get_all_mp3, get_all_codes
 from core.furigana import add_furigana_v2, parentheses_to_ruby_v2
 from core.indexer import AudioIndexer
 from core.player import Player
@@ -17,11 +17,14 @@ from core.waveform import audio_to_waveform_png
 
 load_dotenv()
 
-indexer = AudioIndexer(AUDIO_SOURCE_PATH)
-try:
-    indexer.load_index()
-except FileNotFoundError:
-    print("Index file not found.")
+
+def get_indexer(code):
+    indexer = AudioIndexer(AUDIO_SOURCE_PATH, code)
+    try:
+        indexer.load_index()
+    except FileNotFoundError:
+        print("Index file not found.")
+    return indexer
 
 
 def force_split_and_play_in_loop(query='相撲'):
@@ -33,19 +36,20 @@ def force_split_and_play_in_loop(query='相撲'):
     player.ready = False
     if not player.ready:
         print("Failed to load segments. Splitting the file.")
-        split_file(player.audio, player.metadata)
+        split_file(player.audio, player.metadata, min_silence_len=800)
         player.metadata.save()
 
     while True:
         player.play_current_segment()
-
         au_sep()
-
         player.shift(1)
 
 
 def get_example():
     example = sys.argv[2].strip()
+    
+    code = ask_to_choose_the_code()
+    indexer = get_indexer(code)
 
     if example.isdigit():
         print("Example is a number. Trying to find file by index.")
@@ -66,13 +70,15 @@ def force_speech_recognition(example=None, skip_existing_text=True):
     metadata = SegmentManager(example)
 
     if not metadata.load():
-        split_file(audio_file, metadata)
+        split_file(audio_file, metadata, min_silence_len=800)
         metadata.save()
 
     fill_text_for(metadata, audio=audio_file, skip_existing=skip_existing_text)
 
 
 def have_fun_waveform(query='ここはどこですか'):
+    code = ask_to_choose_the_code()
+    indexer = get_indexer(code)
     example = indexer.find_by_audio_file(query)
     if not example:
         print("Example not found.")
@@ -89,20 +95,24 @@ def have_fun_waveform(query='ここはどこですか'):
 
 
 def reindex():
+    code = ask_to_choose_the_code()
+    indexer = get_indexer(code)
     indexer.rebuild_index_and_save()
     indexer.sort_files()
     indexer.save()
 
 
 def process_incoming(only_new=False):
-    main_db_path = AUDIO_SOURCE_PATH
-    all_files = get_all_mp3(main_db_path)
+    code = ask_to_choose_the_code()
+    indexer = get_indexer(code)
+    all_files = indexer.get_all_mp3()
 
     new_files = []
 
     # renaming and converting
     for file in tqdm.tqdm(all_files):
         basename = os.path.basename(file)
+        base_dir = os.path.dirname(file)
         if not basename.startswith('lb'):
             print(f'Found new file: {basename}')
             basename = basename.replace('-kissvk.com', '')
@@ -110,7 +120,7 @@ def process_incoming(only_new=False):
             basename = basename.replace('Неизвестный-', '')
             basename = f'lb_{basename}'
             print(f'New name: {basename}')
-            new_full_name = os.path.join(main_db_path, basename)
+            new_full_name = os.path.join(base_dir, basename)
             os.system(f'ffmpeg -i "{file}" -b:a 128k "{new_full_name}"')
             new_files.append(new_full_name)
             os.remove(file)
@@ -118,7 +128,7 @@ def process_incoming(only_new=False):
     reindex()
 
     # load again
-    all_files = get_all_mp3(main_db_path)
+    all_files = indexer.get_all_mp3()
 
     # processing
     realm = new_files if only_new else all_files
@@ -129,13 +139,37 @@ def process_incoming(only_new=False):
 
 
 def list_files():
-    main_db_path = AUDIO_SOURCE_PATH
-    files = get_all_mp3(main_db_path)
+    code = ask_to_choose_the_code()
+    indexer = get_indexer(code)
+    files = indexer.get_all_mp3()
     for i, file in enumerate(files):
         print(f'{i + 1}. {os.path.basename(file)}')
 
 
+def ask_to_choose_the_code():
+    codes = get_all_codes(AUDIO_SOURCE_PATH)
+    if not codes:
+        print("No codes found.")
+        exit(1)
+
+    code = os.environ.get('CODE', '').strip().upper()
+    if code not in codes:
+        print("No code specified in the environment. Choose one from the list.")
+    else:
+        print(f"Using code from the environment: {code}")
+        return code
+
+    print("Choose the code:")
+    for i, code in enumerate(codes):
+        print(f'{i + 1}. {code}')
+    code_index = int(input("Enter the code index: ")) - 1
+    return codes[code_index]
+
+
 def foo_func():
+    code = ask_to_choose_the_code()
+    indexer = get_indexer(code)
+
     f = indexer.files[4]
     print(f)
     seg_manager = SegmentManager(os.path.join(AUDIO_SOURCE_PATH, f['audio_file']))
@@ -161,6 +195,12 @@ def convert_ruby():
     metadata.save()
 
 
+def remake_one_file():
+    example = get_example()
+    print("Processing example:", example)
+    raise NotImplementedError("Not implemented yet.")
+
+
 command_map = {
     'reindex': reindex,
     'waveform': have_fun_waveform,
@@ -170,6 +210,7 @@ command_map = {
     'list': list_files,
     'foo': foo_func,
     'convert_ruby': convert_ruby,
+    'remake': remake_one_file,
 }
 
 if __name__ == '__main__':

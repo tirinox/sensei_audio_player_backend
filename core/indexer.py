@@ -6,16 +6,22 @@ from core.segment_man import SegmentManager
 
 
 class AudioIndexer:
-    def __init__(self, path):
-        self.path = path
+    def __init__(self, path, code: str):
+        self.code = code.strip().upper()
+        self.path = os.path.join(path, self.code)
+        print("Indexer path:", self.path)
         self.files = []
 
     @property
     def index_file(self):
         return os.path.join(self.path, 'index.json')
 
+    def get_all_mp3(self):
+        print("Scanning for mp3 files in", self.path)
+        return get_all_mp3(self.path)
+
     def scan_files(self):
-        all_mp3 = get_all_mp3(self.path)
+        all_mp3 = self.get_all_mp3()
         if not all_mp3:
             print("No mp3 found! Check your path")
             return
@@ -66,7 +72,6 @@ class AudioIndexer:
 
         with open(self.index_file, 'r') as f:
             index = json.load(f)
-            self.path = index['path']
             self.files = index['files']
 
     def __getitem__(self, item):
@@ -80,3 +85,10 @@ class AudioIndexer:
     def sort_files(self):
         self.files.sort(key=lambda x: x['audio_file'])
         return self.files
+
+    @staticmethod
+    def beautify_title(name: str):
+        if name.startswith('lb_') or name.endswith('.mp3'):
+            name = name.replace('lb_', '', 1)
+            name = name.replace('.mp3', '', 1)
+        return name

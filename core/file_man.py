@@ -20,3 +20,12 @@ def waveform_out_path(original_file_name, index):
     base_path = os.path.dirname(original_file_name)
     os.makedirs(os.path.join(base_path, 'waveforms', base_name), exist_ok=True)
     return os.path.join(base_path, 'waveforms', base_name, f'wf_{index:03}.png')
+
+
+def get_all_codes(basepath):
+    """
+    Return all subdirectories in the specified directory, if its name starts with JP
+    :param basepath:
+    :return:
+    """
+    return [f for f in os.listdir(basepath) if os.path.isdir(os.path.join(basepath, f)) and f.startswith('JP')]
