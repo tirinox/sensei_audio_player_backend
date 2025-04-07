@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 
 from core.config import AUDIO_SOURCE_PATH
 from core.file_man import waveform_out_path, get_all_mp3, get_all_codes
-from core.furigana import add_furigana_v2, parentheses_to_ruby_v2
+from core.furigana import parentheses_to_ruby_v2, FuriganaClassic
 from core.indexer import AudioIndexer
 from core.player import Player
 from core.process_segments import fill_text_for
@@ -47,9 +47,6 @@ def force_split_and_play_in_loop(query='相撲'):
 
 def get_example():
     example = sys.argv[2].strip()
-    
-    code = ask_to_choose_the_code()
-    indexer = get_indexer(code)
 
     if example.isdigit():
         print("Example is a number. Trying to find file by index.")
@@ -94,8 +91,8 @@ def have_fun_waveform(query='ここはどこですか'):
     audio_to_waveform_png(player.audio, output_path=waveform_out_path(example, index))
 
 
-def reindex():
-    code = ask_to_choose_the_code()
+def reindex(code=None):
+    code = code or ask_to_choose_the_code()
     indexer = get_indexer(code)
     indexer.rebuild_index_and_save()
     indexer.sort_files()
@@ -125,7 +122,7 @@ def process_incoming(only_new=False):
             new_files.append(new_full_name)
             os.remove(file)
 
-    reindex()
+    reindex(code)
 
     # load again
     all_files = indexer.get_all_mp3()
@@ -135,7 +132,12 @@ def process_incoming(only_new=False):
     for file in tqdm.tqdm(realm):
         force_speech_recognition(file, skip_existing_text=True)
 
-    reindex()
+    reindex(code)
+
+    # todo...
+    # print("Furigana transformation")
+    # furiganator = FuriganaClassic()
+    # for file in tqdm.tqdm(realm):
 
 
 def list_files():
@@ -174,9 +176,10 @@ def foo_func():
     print(f)
     seg_manager = SegmentManager(os.path.join(AUDIO_SOURCE_PATH, f['audio_file']))
     seg_manager.load()
+    furiganator = FuriganaClassic()
     for seg in seg_manager.sorted_segments:
         text = seg['text']
-        furi_text = add_furigana_v2(text)
+        furi_text = furiganator.add_furigana_v2(text)
         print('-------')
         print(text)
         print(furi_text)
@@ -201,6 +204,19 @@ def remake_one_file():
     raise NotImplementedError("Not implemented yet.")
 
 
+def cvt_seg_from_dict_to_arr():
+    code = ask_to_choose_the_code()
+    indexer = get_indexer(code)
+    all_files = indexer.get_all_mp3()
+
+    for file in tqdm.tqdm(all_files):
+        metadata = SegmentManager(file)
+        if not metadata.load():
+            print(f"Error loading metadata for {file}")
+            continue
+        metadata.save()
+
+
 command_map = {
     'reindex': reindex,
     'waveform': have_fun_waveform,
@@ -211,6 +227,7 @@ command_map = {
     'foo': foo_func,
     'convert_ruby': convert_ruby,
     'remake': remake_one_file,
+    'cvt_seg_v3': cvt_seg_from_dict_to_arr,
 }
 
 if __name__ == '__main__':

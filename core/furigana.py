@@ -69,29 +69,6 @@ def parentheses_to_ruby_v2(text):
     return new_text
 
 
-def add_furigana_v2(text):
-    # Initialize pykakasi converter
-    kks = pykakasi.kakasi()
-
-    # Regular expression pattern to match kanji and numbers but skip katakana
-    # Kanji Unicode range: \u4E00-\u9FFF
-    # Numbers: ASCII 0-9 and full-width numbers \uFF10-\uFF19
-    pattern = re.compile(r'[\u4E00-\u9FFF\uFF10-\uFF19\u0030-\u0039]+')
-
-    # Function to replace matched kanji and numbers with their readings
-    def replace_match(match):
-        original = match.group()
-        # Use pykakasi to get the reading
-        result = kks.convert(original)
-        # Concatenate readings
-        readings = ''.join([item['hira'] for item in result])
-        # Return the formatted string
-        return f'[{original}]({readings})'
-
-    # Replace all occurrences in the text
-    new_text = pattern.sub(replace_match, text)
-    return new_text
-
 
 def convert_ruby_to_parenthesis(html_string):
     # Regular expression to match ruby structure
@@ -108,3 +85,37 @@ def convert_ruby_to_parenthesis(html_string):
 
     # Return the converted string
     return result
+
+
+class FuriganaClassic:
+    # Regular expression pattern to match kanji and numbers but skip katakana
+    # Kanji Unicode range: \u4E00-\u9FFF
+    # Numbers: ASCII 0-9 and full-width numbers \uFF10-\uFF19
+    PATTERN = re.compile(r'[\u4E00-\u9FFF\uFF10-\uFF19\u0030-\u0039]+')
+
+    def __init__(self):
+        self.tagger = MeCab.Tagger()
+        self.kakasi = pykakasi.kakasi()
+
+    def add_furigana_v2(self, text):
+
+        # Function to replace matched kanji and numbers with their readings
+        def replace_match(match):
+            original = match.group()
+            # Use pykakasi to get the reading
+            result = self.kakasi.convert(original)
+            # Concatenate readings
+            readings = ''.join([item['hira'] for item in result])
+            # Return the formatted string
+            return f'[{original}]({readings})'
+
+        # Replace all occurrences in the text
+        new_text = self.PATTERN.sub(replace_match, text)
+        return new_text
+
+    def generate_furigana(self, sentences):
+        if not sentences:
+            return []
+
+        processed_sentences = [self.add_furigana_v2(sentence) for sentence in sentences]
+        return processed_sentences

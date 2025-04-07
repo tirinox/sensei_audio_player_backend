@@ -6,13 +6,18 @@ from core.splitter import load_audio_file
 
 
 class SegmentManager:
-    @staticmethod
-    def segments_filename(original_filename):
-        return original_filename + "_segments.json"
+    VERSION = 3
+    POSTFIX = "_segments.json"
+
+    @classmethod
+    def segments_filename(cls, original_filename):
+        if original_filename.endswith(cls.POSTFIX):
+            return original_filename
+        return original_filename + cls.POSTFIX
 
     def __init__(self, filename):
         self._filename = filename
-        self.segments = {}
+        self.segments = []
         self.title = os.path.basename(filename)
         self.length = 0
 
@@ -22,7 +27,7 @@ class SegmentManager:
 
     @property
     def sorted_segments(self):
-        return sorted(self.segments.values(), key=lambda x: x['start'])
+        return self.segments
 
     @property
     def original_filename(self):
@@ -31,28 +36,34 @@ class SegmentManager:
     def save(self, save_as=None):
         json_filename = self.segments_filename(save_as or self._filename)
         with open(json_filename, "w") as json_file:
+            # noinspection PyTypeChecker
             json.dump({
                 "filename": os.path.basename(self._filename),
                 "title": self.title or os.path.basename(self._filename),
                 "total_segments": len(self.segments),
                 "segments": self.segments,
                 "length": self.length or len(self.audio) / 1000,
-                "version": 2
+                "version": self.VERSION,
             }, json_file, ensure_ascii=False, indent=4)
         print(f"Non-silent segments saved to {json_filename}")
 
     def load(self):
         json_filename = self.segments_filename(self._filename)
-        self.segments = {}
+        self.segments = []
         try:
             try:
                 with open(json_filename, "r") as json_file:
                     data = json.load(json_file)
                     version = data.get('version', 1)
-                    if version != 2:
+                    if version not in (2, 3):
                         raise ValueError(f"Unsupported version: {version}")
 
-                    self.segments = data['segments']
+                    segments = data['segments']
+                    if isinstance(segments, dict):
+                        self.segments = list(segments.values())
+                    else:
+                        self.segments = segments
+                    self.sort()
 
                 print(f"Non-silent segments loaded from {json_filename}")
                 return True
@@ -63,29 +74,18 @@ class SegmentManager:
             print(f"Non-silent segments JSON file not found: {json_filename}")
             return False
 
-    @staticmethod
-    def segment_key(start, end):
-        return f'{start:08}..{end:08}'
-
-    def set_segment(self, start, end, text=''):
-        self.segments[self.segment_key(start, end)] = {
-            'start': start,
-            'end': end,
-            'text': text
-        }
-
-    def does_segment_exist(self, start, end):
-        return self.segment_key(start, end) in self.segments
+    def sort(self):
+        self.segments.sort(key=lambda x: x['start'])
 
     @property
     def segments_without_text(self):
-        return {k: v for k, v in self.segments.items() if not v['text']}
+        return [v for v in self.segments if not v['text']]
 
     def clear(self):
         self.segments.clear()
 
     def convert_ruby_to_parenthesis(self):
-        for k, v in self.segments.items():
+        for k, v in self.segments:
             text = v['text']
             v['text'] = convert_ruby_to_parenthesis(text)
             print(f"Converted '{text}' to '{v['text']}'")
@@ -96,3 +96,7 @@ class SegmentManager:
 
         for segment, new_text in zip(self.sorted_segments, new_sentences):
             segment['text'] = new_text
+
+    def set_segments(self, segments):
+        self.segments = segments
+        self.sort()

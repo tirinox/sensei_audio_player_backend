@@ -53,12 +53,14 @@ def detect_pieces(audio, padding=200, min_silence_len=1000, silence_thresh=-40):
 
 
 def load_audio_file(file_path):
-    return AudioSegment.from_mp3(file_path)
+    try:
+        return AudioSegment.from_mp3(file_path)
+    except Exception as e:
+        print(f"Failed to load audio file: {e}")
+        raise
 
 
 def split_file(audio_file, metadata, min_silence_len):
     metadata.clear()
     non_silent_segments = detect_pieces(audio_file, min_silence_len=min_silence_len)
-    for idx, (start, end) in enumerate(non_silent_segments):
-        if not metadata.does_segment_exist(start, end):
-            metadata.set_segment(start, end, "")
+    metadata.set_segments(non_silent_segments)
