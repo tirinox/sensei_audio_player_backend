@@ -32,11 +32,12 @@ class AudioIndexer:
             seg = SegmentManager(mp3_file)
             if seg.load():
                 just_filename = os.path.basename(mp3_file)
+                len_sec = len(seg.audio) / 1000  # this line loads the audio file into memory (slow)
                 files.append({
                     "audio_file": just_filename,
                     "segment_file": seg.segments_filename(just_filename),
                     "n_segments": len(seg.segments),
-                    "length": len(seg.audio) / 1000,
+                    "length": len_sec,
                     "title": just_filename,
                 })
 

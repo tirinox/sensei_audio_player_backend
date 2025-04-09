@@ -116,10 +116,16 @@ def process_incoming(only_new=False):
             basename = basename.replace('My Recording-', '')
             basename = basename.replace('Неизвестный-', '')
             basename = f'lb_{basename}'
-            print(f'New name: {basename}')
+            print(f'New name: {basename}. Converting to lower bitrate...')
             new_full_name = os.path.join(base_dir, basename)
             os.system(f'ffmpeg -i "{file}" -b:a 128k "{new_full_name}"')
             new_files.append(new_full_name)
+
+            # print size in mb
+            new_size = os.path.getsize(new_full_name)
+            new_size_mb = new_size / (1024 * 1024)
+            print(f'New size of {new_full_name}: {new_size_mb:.2f} MB')
+
             os.remove(file)
 
     reindex(code)

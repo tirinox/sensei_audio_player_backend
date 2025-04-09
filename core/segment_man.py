@@ -65,7 +65,7 @@ class SegmentManager:
                         self.segments = segments
                     self.sort()
 
-                print(f"Non-silent segments loaded from {json_filename}")
+                print(f"Non-silent segments loaded from {json_filename} ({len(self.segments)} segments)")
                 return True
             except json.JSONDecodeError:
                 print(f"Failed to load JSON file: {json_filename}")
@@ -98,5 +98,11 @@ class SegmentManager:
             segment['text'] = new_text
 
     def set_segments(self, segments):
-        self.segments = segments
+        self.segments = [
+            {
+                "start": start,
+                "end": end,
+                "text": "",
+            } for start, end in segments
+        ]
         self.sort()
