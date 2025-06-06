@@ -30,6 +30,13 @@ class SegmentManager:
         return self.segments
 
     @property
+    def original_sentences(self):
+        return [
+            segment.get('original_text', segment.get('text', ''))
+            for segment in self.segments
+        ]
+
+    @property
     def original_filename(self):
         return self._filename
 
@@ -95,6 +102,7 @@ class SegmentManager:
             raise ValueError("Number of sentences does not match number of segments!")
 
         for segment, new_text in zip(self.sorted_segments, new_sentences):
+            segment.setdefault("original_text", segment["text"])
             segment['text'] = new_text
 
     def set_segments(self, segments):

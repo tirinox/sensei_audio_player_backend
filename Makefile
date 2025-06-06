@@ -23,3 +23,7 @@ upload: # Upload the audio files.
 .PHONY: remake
 remake: # Rescan the audio file using specified pause duration
 	python pg.py remake
+
+.PHONY: foo
+foo: # Placeholder for future tasks.
+	python pg.py foo

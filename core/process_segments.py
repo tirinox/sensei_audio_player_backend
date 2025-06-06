@@ -1,5 +1,3 @@
-import os
-
 from dotenv import load_dotenv
 from tqdm import tqdm
 
@@ -9,7 +7,6 @@ from core.splitter import load_audio_file
 
 load_dotenv()
 
-AUDIO_SOURCE_PATH = os.environ.get('AUDIO_SOURCE_PATH')
 
 g_sr = None
 

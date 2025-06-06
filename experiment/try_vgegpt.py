@@ -3,7 +3,7 @@ import os
 from dotenv import load_dotenv
 
 from core.config import AUDIO_SOURCE_PATH
-from core.furigana_neural import FugiranaNeural
+from core.furigana_neural import FuriganaNeural
 from core.indexer import AudioIndexer
 from core.segment_man import SegmentManager
 
@@ -13,10 +13,10 @@ load_dotenv()
 def main():
     os.chdir("..")
 
-    f = FugiranaNeural()
+    f = FuriganaNeural.from_env()
 
     # print(f.generate_furigana(["私は猫です", "私は犬です"]))
-    indexer = AudioIndexer(f"{AUDIO_SOURCE_PATH}")
+    indexer = AudioIndexer(f"{AUDIO_SOURCE_PATH}", "JPLTX")
     try:
         indexer.load_index()
     except FileNotFoundError:

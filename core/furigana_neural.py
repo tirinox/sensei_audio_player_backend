@@ -1,7 +1,7 @@
+import os
 import re
 
 from openai import OpenAI
-import os
 
 
 def process_numbered_list(text):
@@ -14,20 +14,15 @@ def process_numbered_list(text):
     return processed_lines
 
 
-class FugiranaNeural:
-    def __init__(self, api_key=None):
+class FuriganaNeural:
+    def __init__(self, api_url, api_key, model):
         self.client = OpenAI(
-            api_key=api_key or os.environ['VGEGPT_API_KEY'],
-            base_url="https://api.vsegpt.ru/v1",
+            api_key=api_key,
+            base_url=api_url,
         )
-
-        self.model = 'openai/gpt-4o-2024-08-06'
-        # self.model = 'anthropic/claude-3-haiku'
+        self.model = model
 
     def _request_ai(self, prompt):
-        # mock
-        # return '1. 練習B\n2. 1\n3. [新聞](しんぶん)を[読](よ)むとき、[眼鏡](めがね)をかけます。\n4. [病院](びょういん)へ[行](い)くとき、[保険証](ほけんしょう)を[忘](わす)れないでください。\n5. [散歩](さんぽ)するときいつもカメラを[持](も)っていきます。\n6. [漢字](かんじ)がわからないときこの[辞書](じしょ)を[使](つか)います。\n7. [現金](げんきん)がないときカードで[買い物](かいもの)します。\n8. 2\n9. [出](で)かけるとき[行](い)ってまいりますと[言](い)います。\n10. [家](いえ)へ[帰](かえ)った[時](とき)、ただいまと[言](い)います。\n11. 1.\n12. [寝](ね)るときおやすみなさいと[言](い)います。\n13. [朝](あさ)[知](し)り[合](あ)いに[会](あ)った[時](とき)おはようございますと[言](い)います。\n14. ご[飯](はん)を[食](た)べた[時](とき)ごちそうさまと[言](い)います。\n15. [部長](ぶちょう)の[部屋](へや)に[入](はい)るとき[失礼](しつれい)しますと[言](い)います。\n16. 3\n17. [寂](さび)しい[時](とき)[家族](かぞく)に[電話](でんわ)をかけます。\n18. [頭](あたま)が[痛](いた)いときこの[薬](くすり)を[飲](の)みます。\n19. [暇](ひま)な[時](とき)ビデオを[見](み)ます。\n20. [妻](つま)が[病気](びょうき)の[時](とき)[会社](かいしゃ)を[休](やす)みます。\n21. [晩御飯](ばんごはん)の[時](とき)ワインを[飲](の)みます。'
-
         messages = [
             {"role": "user", "content": prompt}
         ]
@@ -51,9 +46,9 @@ class FugiranaNeural:
 
         text = """
 Please, add furigana to the following sentences.
-For each kanji and counters in the sentence, add furigana in the following format:
+For each kanji, numbers and counters in the sentence, add furigana in the following format:
 [漢字](かんじ)
-Do not add furigana to hiragana, katakana or any other non-kanji characters except numbers with counters.
+Do not add furigana to hiragana, katakana or any other non-kanji characters except numbers and counters.
 Output must not contain anything except result text in the same number of lines as input text.
 """.strip()
 
@@ -71,3 +66,14 @@ Output must not contain anything except result text in the same number of lines 
             print("🛑Number of lines in response does not match number of input sentences!")
 
         return lines
+
+    @classmethod
+    def from_env(cls):
+        api_url = os.environ.get("AI_API_URL", "https://api.deepseek.com")
+        api_key = os.environ.get("AI_API_KEY")
+        model = os.environ.get("AI_API_MODEL", "deepseek-chat")
+
+        if not api_key:
+            raise ValueError("API key for DeepSeek is not set in environment variables.")
+
+        return cls(api_url, api_key, model)

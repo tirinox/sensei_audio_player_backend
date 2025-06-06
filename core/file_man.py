@@ -1,5 +1,8 @@
 import os
 
+from .config import AUDIO_SOURCE_PATH
+from .tui import run_menu
+
 
 def get_all_mp3(path):
     """
@@ -12,6 +15,7 @@ def get_all_mp3(path):
         for file in files:
             if file.endswith(".mp3"):
                 mp3_files.append(os.path.join(root, file))
+    mp3_files.sort(reverse=True)
     return mp3_files
 
 
@@ -29,3 +33,20 @@ def get_all_codes(basepath):
     :return:
     """
     return [f for f in os.listdir(basepath) if os.path.isdir(os.path.join(basepath, f)) and f.startswith('JP')]
+
+
+def ask_to_choose_the_code():
+    codes = get_all_codes(AUDIO_SOURCE_PATH)
+    if not codes:
+        print("No codes found.")
+        exit(1)
+
+    code = os.environ.get('CODE', '').strip().upper()
+    if code not in codes:
+        print("No code specified in the environment. Choose one from the list.")
+    else:
+        print(f"Using code from the environment: {code}")
+        return code
+
+    index_selected = run_menu(codes, 5, codes.index("JPLTX"))
+    return codes[index_selected]

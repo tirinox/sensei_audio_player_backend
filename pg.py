@@ -5,13 +5,15 @@ import tqdm
 from dotenv import load_dotenv
 
 from core.config import AUDIO_SOURCE_PATH
-from core.file_man import waveform_out_path, get_all_mp3, get_all_codes
+from core.file_man import waveform_out_path, get_all_mp3, ask_to_choose_the_code
 from core.furigana import parentheses_to_ruby_v2, FuriganaClassic
+from core.furigana_neural import FuriganaNeural
 from core.indexer import AudioIndexer
 from core.player import Player
 from core.process_segments import fill_text_for
 from core.segment_man import SegmentManager
 from core.splitter import load_audio_file, split_file
+from core.tui import run_menu
 from core.utils import au_sep
 from core.waveform import audio_to_waveform_png
 
@@ -27,7 +29,7 @@ def get_indexer(code):
     return indexer
 
 
-def force_split_and_play_in_loop(query='相撲'):
+def force_split_and_play_in_loop():
     example = get_example()
     print("Processing example:", example)
 
@@ -99,6 +101,23 @@ def reindex(code=None):
     indexer.save()
 
 
+def furiganate_all(indexer):
+    furiganator = FuriganaNeural.from_env()
+    all_files = indexer.get_all_mp3()
+
+    # processing
+    for file in tqdm.tqdm(all_files):
+        seg = SegmentManager(file)
+        seg.load()
+
+        sentences = [s["text"] for s in seg.sorted_segments]
+
+        furiganed_sentences = furiganator.generate_furigana(sentences)
+
+        seg.update_texts(furiganed_sentences)
+        seg.save()
+
+
 def process_incoming(only_new=False):
     code = ask_to_choose_the_code()
     indexer = get_indexer(code)
@@ -140,10 +159,7 @@ def process_incoming(only_new=False):
 
     reindex(code)
 
-    # todo...
-    # print("Furigana transformation")
-    # furiganator = FuriganaClassic()
-    # for file in tqdm.tqdm(realm):
+    furiganate_all(indexer)
 
 
 def list_files():
@@ -154,43 +170,15 @@ def list_files():
         print(f'{i + 1}. {os.path.basename(file)}')
 
 
-def ask_to_choose_the_code():
-    codes = get_all_codes(AUDIO_SOURCE_PATH)
-    if not codes:
-        print("No codes found.")
-        exit(1)
-
-    code = os.environ.get('CODE', '').strip().upper()
-    if code not in codes:
-        print("No code specified in the environment. Choose one from the list.")
-    else:
-        print(f"Using code from the environment: {code}")
-        return code
-
-    print("Choose the code:")
-    for i, code in enumerate(codes):
-        print(f'{i + 1}. {code}')
-    code_index = int(input("Enter the code index: ")) - 1
-    return codes[code_index]
-
-
 def foo_func():
     code = ask_to_choose_the_code()
-    indexer = get_indexer(code)
 
-    f = indexer.files[4]
-    print(f)
-    seg_manager = SegmentManager(os.path.join(AUDIO_SOURCE_PATH, f['audio_file']))
-    seg_manager.load()
-    furiganator = FuriganaClassic()
-    for seg in seg_manager.sorted_segments:
-        text = seg['text']
-        furi_text = furiganator.add_furigana_v2(text)
-        print('-------')
-        print(text)
-        print(furi_text)
-        html = parentheses_to_ruby_v2(furi_text)
-        print(html)
+    indexer = get_indexer(code)
+    all_files = indexer.get_all_mp3()
+
+    example_index = run_menu(all_files, timeout=0)
+    example = all_files[example_index]
+    print(example)
 
 
 def convert_ruby():
@@ -223,6 +211,27 @@ def cvt_seg_from_dict_to_arr():
         metadata.save()
 
 
+def furigana_1():
+    code = ask_to_choose_the_code()
+
+    indexer = get_indexer(code)
+    all_files = indexer.get_all_mp3()
+
+    example_index = run_menu(all_files, timeout=0)
+    example = all_files[example_index]
+
+    seg = SegmentManager(example)
+    seg.load()
+
+    sentences = seg.original_sentences
+
+    furiganator = FuriganaNeural.from_env()
+    furiganed_sentences = furiganator.generate_furigana(sentences)
+
+    seg.update_texts(furiganed_sentences)
+    seg.save()
+
+
 command_map = {
     'reindex': reindex,
     'waveform': have_fun_waveform,
@@ -234,6 +243,7 @@ command_map = {
     'convert_ruby': convert_ruby,
     'remake': remake_one_file,
     'cvt_seg_v3': cvt_seg_from_dict_to_arr,
+    'furigana_1': furigana_1,
 }
 
 if __name__ == '__main__':
