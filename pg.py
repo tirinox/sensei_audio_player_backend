@@ -110,8 +110,11 @@ def furiganate_all(indexer):
         seg = SegmentManager(file)
         seg.load()
 
-        sentences = [s["text"] for s in seg.sorted_segments]
+        if seg.all_has_original_text:
+            print(f"Skipping {file} as it already has original text. Likely already furiganated.")
+            continue
 
+        sentences = seg.original_sentences
         furiganed_sentences = furiganator.generate_furigana(sentences)
 
         seg.update_texts(furiganed_sentences)

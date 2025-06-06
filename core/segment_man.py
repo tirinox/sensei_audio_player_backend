@@ -37,6 +37,10 @@ class SegmentManager:
         ]
 
     @property
+    def all_has_original_text(self):
+        return all('original_text' in segment for segment in self.segments)
+
+    @property
     def original_filename(self):
         return self._filename
 
