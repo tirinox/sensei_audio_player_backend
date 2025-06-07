@@ -27,3 +27,8 @@ remake: # Rescan the audio file using specified pause duration
 .PHONY: foo
 foo: # Placeholder for future tasks.
 	python pg.py foo
+
+
+.PHONY: webiu
+webui: # Run the Streamlit web application.
+	streamlit run webui.py

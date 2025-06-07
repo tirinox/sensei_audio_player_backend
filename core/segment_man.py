@@ -109,6 +109,11 @@ class SegmentManager:
             segment.setdefault("original_text", segment["text"])
             segment['text'] = new_text
 
+    def set_text(self, i, new_text):
+        seg = self.segments[i]
+        seg.setdefault("original_text", new_text)
+        seg['text'] = new_text
+
     def set_segments(self, segments):
         self.segments = [
             {
@@ -117,4 +122,27 @@ class SegmentManager:
                 "text": "",
             } for start, end in segments
         ]
+        self.sort()
+
+    def join_segments(self, id1, id2):
+        if id1 >= len(self.segments) or id2 >= len(self.segments):
+            raise IndexError("Segment index out of range")
+
+        if id1 > id2:
+            id1, id2 = id2, id1
+
+        if id2 - id1 != 1:
+            raise ValueError("Segments to join must be adjacent")
+
+        segment1 = self.segments[id1]
+        segment2 = self.segments[id2]
+
+        new_segment = {
+            "start": segment1['start'],
+            "end": segment2['end'],
+            "text": f"{segment1['text']} {segment2['text']}".strip(),
+        }
+
+        self.segments[id1] = new_segment
+        del self.segments[id2]
         self.sort()

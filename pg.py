@@ -6,7 +6,6 @@ from dotenv import load_dotenv
 
 from core.config import AUDIO_SOURCE_PATH
 from core.file_man import waveform_out_path, get_all_mp3, ask_to_choose_the_code
-from core.furigana import parentheses_to_ruby_v2, FuriganaClassic
 from core.furigana_neural import FuriganaNeural
 from core.indexer import AudioIndexer
 from core.player import Player
@@ -18,15 +17,6 @@ from core.utils import au_sep
 from core.waveform import audio_to_waveform_png
 
 load_dotenv()
-
-
-def get_indexer(code):
-    indexer = AudioIndexer(AUDIO_SOURCE_PATH, code)
-    try:
-        indexer.load_index()
-    except FileNotFoundError:
-        print("Index file not found.")
-    return indexer
 
 
 def force_split_and_play_in_loop():
@@ -77,7 +67,7 @@ def force_speech_recognition(example=None, skip_existing_text=True):
 
 def have_fun_waveform(query='ここはどこですか'):
     code = ask_to_choose_the_code()
-    indexer = get_indexer(code)
+    indexer = AudioIndexer.from_code(code)
     example = indexer.find_by_audio_file(query)
     if not example:
         print("Example not found.")
@@ -95,7 +85,7 @@ def have_fun_waveform(query='ここはどこですか'):
 
 def reindex(code=None):
     code = code or ask_to_choose_the_code()
-    indexer = get_indexer(code)
+    indexer = AudioIndexer.from_code(code)
     indexer.rebuild_index_and_save()
     indexer.sort_files()
     indexer.save()
@@ -123,7 +113,7 @@ def furiganate_all(indexer):
 
 def process_incoming(only_new=False):
     code = ask_to_choose_the_code()
-    indexer = get_indexer(code)
+    indexer = AudioIndexer.from_code(code)
     all_files = indexer.get_all_mp3()
 
     new_files = []
@@ -167,7 +157,7 @@ def process_incoming(only_new=False):
 
 def list_files():
     code = ask_to_choose_the_code()
-    indexer = get_indexer(code)
+    indexer = AudioIndexer.from_code(code)
     files = indexer.get_all_mp3()
     for i, file in enumerate(files):
         print(f'{i + 1}. {os.path.basename(file)}')
@@ -176,7 +166,7 @@ def list_files():
 def foo_func():
     code = ask_to_choose_the_code()
 
-    indexer = get_indexer(code)
+    indexer = AudioIndexer.from_code(code)
     all_files = indexer.get_all_mp3()
 
     example_index = run_menu(all_files, timeout=0)
@@ -203,7 +193,7 @@ def remake_one_file():
 
 def cvt_seg_from_dict_to_arr():
     code = ask_to_choose_the_code()
-    indexer = get_indexer(code)
+    indexer = AudioIndexer.from_code(code)
     all_files = indexer.get_all_mp3()
 
     for file in tqdm.tqdm(all_files):
@@ -217,7 +207,7 @@ def cvt_seg_from_dict_to_arr():
 def furigana_1():
     code = ask_to_choose_the_code()
 
-    indexer = get_indexer(code)
+    indexer = AudioIndexer.from_code(code)
     all_files = indexer.get_all_mp3()
 
     example_index = run_menu(all_files, timeout=0)

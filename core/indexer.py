@@ -1,6 +1,7 @@
 import json
 import os.path
 
+from core.config import AUDIO_SOURCE_PATH
 from core.file_man import get_all_mp3
 from core.segment_man import SegmentManager
 
@@ -93,3 +94,12 @@ class AudioIndexer:
             name = name.replace('lb_', '', 1)
             name = name.replace('.mp3', '', 1)
         return name
+
+    @classmethod
+    def from_code(cls, code):
+        indexer = AudioIndexer(AUDIO_SOURCE_PATH, code)
+        try:
+            indexer.load_index()
+        except FileNotFoundError:
+            print("Index file not found.")
+        return indexer
