@@ -7,28 +7,44 @@ from core.file_man import get_all_codes
 from core.indexer import AudioIndexer
 from core.segment_man import SegmentManager
 
+state = st.session_state
+if "mode" not in state:
+    state["mode"] = "audio"
+
 
 def main():
     st.set_page_config(page_title="Sensei Audio Player Backend UI", layout="wide")
+
+    st.sidebar.title("Main menu")
+    col1, col2 = st.sidebar.columns(2)
+
+    if col1.button("Process files"):
+        state["mode"] = "files"
+    if col2.button("Audio Editor"):
+        state["mode"] = "audio"
+
+    if state["mode"] == "files":
+        mode_process_files()
+    elif state["mode"] == "audio":
+        mode_audio_editor()
+
+
+def mode_process_files():
+    st.header("WIP")
+
+
+def mode_audio_editor():
+    # list of codes to select
+    st.sidebar.header("Select Code")
 
     codes = get_all_codes(AUDIO_SOURCE_PATH)
     if not codes:
         st.error("No audio codes found. Please check the AUDIO_SOURCE_PATH configuration.")
         st.stop()
 
-    # list of codes to select
-    st.sidebar.title("Select Code")
     selected_code = st.sidebar.selectbox("Code", options=codes, help="Select code for audio files database")
 
-    full_path = display_file_list(selected_code)
-    if full_path:
-        audio_editor(selected_code, full_path)
-    else:
-        st.header("Select a Code and a File")
-
-
-def display_file_list(code):
-    indexer = AudioIndexer.from_code(code)
+    indexer = AudioIndexer.from_code(selected_code)
     files = indexer.get_all_mp3()
 
     if not files:
@@ -50,7 +66,11 @@ def display_file_list(code):
     full_path = os.path.join(path, selected_audio_file)
 
     st.sidebar.text(f"Full Path: {full_path}")
-    return full_path
+
+    if full_path:
+        audio_editor_v2(selected_code, full_path)
+    else:
+        st.header("Select a Code and a File")
 
 
 def save(seg):
@@ -129,6 +149,49 @@ def audio_editor(code, filepath):
 
     if st.button("💾 Save"):
         save(seg_man)
+
+
+def audio_editor_v2(code, filepath):
+    # Display the selected code
+    st.title(f"Audio Segment Editor")
+    st.markdown(f"Code: `{code}`, File path: `{filepath}`")
+
+    st.audio(filepath, format="audio/mp3")
+
+    seg_man = SegmentManager(filepath)
+    seg_man.load()
+
+    for i, seg in enumerate(seg_man.sorted_segments):
+        time_start = seg.get('start', 0) / 1000
+        time_end = seg.get('end', 0) / 1000
+        duration = (seg.get('end', 0) - seg.get('start', 0)) / 1000
+        text = seg.get('text', '')
+
+        container = st.container(border=True)
+
+        container.markdown(f"**Start:** {time_start:.2f} s, **End:** {time_end:.2f} s, **Duration:** {duration:.2f} s")
+        container.checkbox(f"Select Segment #{i + 1}", value=False, key=f"select_{i}")
+
+        new_text = container.text_input(f"Text #{i + 1}", value=text, help="Text associated with the segment",
+                                        label_visibility="collapsed")
+        if new_text != text:
+            seg_man.set_text(i, new_text)
+            save(seg_man)
+
+    if st.button("⛙ Join two segments"):
+        seg_i_to_join = [
+            int(k.split('_')[1]) for k in st.session_state.keys() if k.startswith('select_') and st.session_state[k]
+        ]
+        st.code(repr(seg_i_to_join))
+
+        cannot_join = len(seg_i_to_join) != 2 or abs(seg_i_to_join[0] - seg_i_to_join[1]) != 1
+        if cannot_join:
+            st.warning("Please select exactly two consecutive segments to join.")
+        else:
+            st.info(f"Joining segments {seg_i_to_join[0] + 1} and {seg_i_to_join[1] + 1}...")
+            seg_man.join_segments(seg_i_to_join[0], seg_i_to_join[1])
+            save(seg_man)
+            st.rerun()
 
 
 if __name__ == "__main__":
