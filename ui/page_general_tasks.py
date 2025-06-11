@@ -1,9 +1,9 @@
 import streamlit as st
 
-from ui.task_make import display_make_button_simple
+from ui.utils import CommandRunner
 
 
 def mode_general_tasks():
     st.header("General tasks")
 
-    display_make_button_simple("make upload", "Upload")
+    CommandRunner("uploader").display("make upload", "Upload files")
