@@ -50,3 +50,29 @@ def ask_to_choose_the_code():
 
     index_selected = run_menu(codes, 5, codes.index("JPLTX"))
     return codes[index_selected]
+
+
+def convert_mp3_to_low_bitrate(file):
+    basename = os.path.basename(file)
+    base_dir = os.path.dirname(file)
+
+    print(f'Found new file: {basename}')
+    basename = basename.replace('-kissvk.com', '')
+    basename = basename.replace('My Recording-', '')
+    basename = basename.replace('Неизвестный-', '')
+    basename = f'lb_{basename}'
+    print(f'New name: {basename}. Converting to lower bitrate...')
+    new_full_name = os.path.join(base_dir, basename)
+    os.system(f'ffmpeg -i "{file}" -b:a 128k "{new_full_name}"')
+
+    # print size in mb
+    new_size = os.path.getsize(new_full_name)
+    new_size_mb = new_size / (1024 * 1024)
+    print(f'New size of {new_full_name}: {new_size_mb:.2f} MB')
+
+    return new_full_name
+
+
+def is_processed_mp3_lb(file):
+    basename = os.path.basename(file)
+    return basename.startswith('lb')

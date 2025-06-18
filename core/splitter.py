@@ -1,3 +1,7 @@
+import json
+import shlex
+import subprocess
+
 from pydub import AudioSegment
 from pydub.silence import detect_silence
 
@@ -58,6 +62,13 @@ def load_audio_file(file_path):
     except Exception as e:
         print(f"Failed to load audio file: {e}")
         raise
+
+
+def mp3_length_seconds(path: str) -> float:
+    cmd = f'ffprobe -v error -select_streams a:0 ' \
+          f'-show_entries stream=duration -of json {shlex.quote(str(path))}'
+    out = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
+    return float(json.loads(out.stdout)['streams'][0]['duration'])
 
 
 def split_file(audio_file, metadata, min_silence_len):

@@ -5,13 +5,14 @@ import tqdm
 from dotenv import load_dotenv
 
 from core.config import AUDIO_SOURCE_PATH
-from core.file_man import waveform_out_path, get_all_mp3, ask_to_choose_the_code
+from core.file_man import waveform_out_path, get_all_mp3, ask_to_choose_the_code, is_processed_mp3_lb, \
+    convert_mp3_to_low_bitrate
 from core.furigana_neural import FuriganaNeural
 from core.indexer import AudioIndexer
 from core.player import Player
 from core.process_segments import fill_text_for
 from core.segment_man import SegmentManager
-from core.splitter import load_audio_file, split_file
+from core.splitter import load_audio_file, split_file, mp3_length_seconds
 from core.tui import run_menu
 from core.utils import au_sep
 from core.waveform import audio_to_waveform_png
@@ -111,7 +112,7 @@ def furiganate_all(indexer):
         seg.save()
 
 
-def process_incoming(only_new=False):
+def process_incoming(only_new=True):
     code = ask_to_choose_the_code()
     indexer = AudioIndexer.from_code(code)
     all_files = indexer.get_all_mp3()
@@ -120,24 +121,13 @@ def process_incoming(only_new=False):
 
     # renaming and converting
     for file in tqdm.tqdm(all_files):
-        basename = os.path.basename(file)
-        base_dir = os.path.dirname(file)
-        if not basename.startswith('lb'):
-            print(f'Found new file: {basename}')
-            basename = basename.replace('-kissvk.com', '')
-            basename = basename.replace('My Recording-', '')
-            basename = basename.replace('Неизвестный-', '')
-            basename = f'lb_{basename}'
-            print(f'New name: {basename}. Converting to lower bitrate...')
-            new_full_name = os.path.join(base_dir, basename)
-            os.system(f'ffmpeg -i "{file}" -b:a 128k "{new_full_name}"')
+        if not is_processed_mp3_lb(file):
+            # new file detected, convert and rename
+            new_full_name = convert_mp3_to_low_bitrate(file)
+
             new_files.append(new_full_name)
 
-            # print size in mb
-            new_size = os.path.getsize(new_full_name)
-            new_size_mb = new_size / (1024 * 1024)
-            print(f'New size of {new_full_name}: {new_size_mb:.2f} MB')
-
+            # remove the original file
             os.remove(file)
 
     reindex(code)
@@ -172,6 +162,9 @@ def foo_func():
     example_index = run_menu(all_files, timeout=0)
     example = all_files[example_index]
     print(example)
+
+    seconds = mp3_length_seconds(example)
+    print(f"Length of {example}: {seconds} seconds")
 
 
 def convert_ruby():

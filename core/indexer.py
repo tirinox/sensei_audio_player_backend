@@ -4,6 +4,7 @@ import os.path
 from core.config import AUDIO_SOURCE_PATH
 from core.file_man import get_all_mp3
 from core.segment_man import SegmentManager
+from core.splitter import mp3_length_seconds
 
 
 class AudioIndexer:
@@ -33,7 +34,7 @@ class AudioIndexer:
             seg = SegmentManager(mp3_file)
             if seg.load():
                 just_filename = os.path.basename(mp3_file)
-                len_sec = len(seg.audio) / 1000  # this line loads the audio file into memory (slow)
+                len_sec = mp3_length_seconds(mp3_file)
                 files.append({
                     "audio_file": just_filename,
                     "segment_file": seg.segments_filename(just_filename),

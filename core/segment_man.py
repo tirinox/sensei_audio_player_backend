@@ -2,7 +2,7 @@ import json
 import os.path
 
 from core.furigana import convert_ruby_to_parenthesis
-from core.splitter import load_audio_file
+from core.splitter import load_audio_file, mp3_length_seconds
 
 
 class SegmentManager:
@@ -20,10 +20,6 @@ class SegmentManager:
         self.segments = []
         self.title = os.path.basename(filename)
         self.length = 0
-
-    @property
-    def audio(self):
-        return load_audio_file(self._filename)
 
     @property
     def sorted_segments(self):
@@ -53,7 +49,7 @@ class SegmentManager:
                 "title": self.title or os.path.basename(self._filename),
                 "total_segments": len(self.segments),
                 "segments": self.segments,
-                "length": self.length or len(self.audio) / 1000,
+                "length": self.length or mp3_length_seconds(self._filename),
                 "version": self.VERSION,
             }, json_file, ensure_ascii=False, indent=4)
         print(f"Non-silent segments saved to {json_filename}")
