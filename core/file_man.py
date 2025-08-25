@@ -59,7 +59,9 @@ def convert_mp3_to_low_bitrate(file):
     print(f'Found new file: {basename}')
     basename = basename.replace('-kissvk.com', '')
     basename = basename.replace('My Recording-', '')
+    basename = basename.replace('My Recording - ', '')
     basename = basename.replace('Неизвестный-', '')
+    basename = basename.replace(' [audiovk.com]', '')
     basename = f'lb_{basename}'
     print(f'New name: {basename}. Converting to lower bitrate...')
     new_full_name = os.path.join(base_dir, basename)
