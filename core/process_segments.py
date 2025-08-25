@@ -39,6 +39,7 @@ def fill_text_for(metadata: SegmentManager, audio=None, sr=None, skip_existing=T
 
         text = text.strip()
         text = text.replace('か?', 'か。')
+        text = text.replace('A.', 'ええ。')
 
         if not text.endswith('。') and not text.endswith('？') and not text.endswith('?') and len(text) >= 5:
             text += '。'
