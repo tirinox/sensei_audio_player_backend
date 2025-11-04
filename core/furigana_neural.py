@@ -49,6 +49,7 @@ Please, add furigana to the following sentences.
 For each kanji, numbers and counters in the sentence, add furigana in the following format:
 [漢字](かんじ)
 Do not add furigana to hiragana, katakana or any other non-kanji characters except numbers and counters.
+Please do not substitute words commonly written in kana only with rarely used kanji.
 Output must not contain anything except result text in the same number of lines as input text.
 """.strip()
 
