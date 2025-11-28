@@ -20,15 +20,14 @@ process-incoming: # Process incoming messages.
 upload: # Upload the audio files.
 	scripts/upload.sh
 
-.PHONY: remake
-remake: # Rescan the audio file using specified pause duration
-	python pg.py remake
+.PHONY: update
+update: # Rescan the audio file using specified pause duration
+	python pg.py update
 
 .PHONY: foo
 foo: # Placeholder for future tasks.
 	python pg.py foo
 
-
-.PHONY: webiu
+.PHONY: webui
 webui: # Run the Streamlit web application.
 	streamlit run webui.py

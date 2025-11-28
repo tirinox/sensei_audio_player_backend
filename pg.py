@@ -5,7 +5,7 @@ import tqdm
 from dotenv import load_dotenv
 
 from core.config import AUDIO_SOURCE_PATH
-from core.file_man import waveform_out_path, get_all_mp3, ask_to_choose_the_code, is_processed_mp3_lb, \
+from core.file_man import waveform_out_path, ask_to_choose_the_code, is_processed_mp3_lb, \
     convert_mp3_to_low_bitrate
 from core.furigana_neural import FuriganaNeural
 from core.indexer import AudioIndexer
@@ -39,27 +39,41 @@ def force_split_and_play_in_loop():
 
 
 def get_example():
-    example = sys.argv[2].strip()
+    code = ask_to_choose_the_code()
+    indexer = AudioIndexer.from_code(code)
 
-    if example.isdigit():
-        print("Example is a number. Trying to find file by index.")
-        example = int(example)
-        files = get_all_mp3(AUDIO_SOURCE_PATH)
-        example = files[example - 1]
-    if os.path.dirname(example) == '':
-        print("Example is a filename. Trying to find it in the database path.")
-        example = os.path.join(AUDIO_SOURCE_PATH, example)
+    try:
+        example = sys.argv[2].strip()
+        if example.isdigit():
+            print("Example is a number. Trying to find file by index.")
+            example = int(example)
+            files = indexer.get_all_mp3()
+            example = files[example - 1]
+            print(f'You picked: {example}')
+            if input('Are you sure? (y/n) ').strip().lower() != 'y':
+                print("Aborting.")
+                sys.exit(0)
+        if os.path.dirname(example) == '':
+            print("Example is a filename. Trying to find it in the database path.")
+            example = os.path.join(AUDIO_SOURCE_PATH, example)
+    except IndexError:
+        files = indexer.get_all_mp3()
+        example_index = run_menu(files, timeout=0)
+        example = files[example_index]
+
     return example
 
 
-def force_speech_recognition(example=None, skip_existing_text=True):
-    example = example or get_example()
-    print("Processing example:", example)
+def force_speech_recognition(example, skip_existing_text=True, force_split=False):
+    if not example:
+        raise ValueError("Example file path is required.")
+
+    print(f"Running speech recognition for: {example}...")
 
     audio_file = load_audio_file(example)
     metadata = SegmentManager(example)
 
-    if not metadata.load():
+    if force_split or not metadata.load():
         split_file(audio_file, metadata, min_silence_len=800)
         metadata.save()
 
@@ -169,19 +183,13 @@ def foo_func():
 
 def convert_ruby():
     example = get_example()
-    print("Processing example:", example)
+    print("Converting Ruby for example:", example)
     metadata = SegmentManager(example)
     metadata.load()
     metadata.convert_ruby_to_parenthesis()
     print("Converted to parenthesis")
     input("Press Enter to continue...")
     metadata.save()
-
-
-def remake_one_file():
-    example = get_example()
-    print("Processing example:", example)
-    raise NotImplementedError("Not implemented yet.")
 
 
 def cvt_seg_from_dict_to_arr():
@@ -218,16 +226,32 @@ def furigana_1():
     seg.save()
 
 
+def update_one_file():
+    example = get_example()
+
+    force_speech_recognition(example, skip_existing_text=False, force_split=True)
+
+    furiganator = FuriganaNeural.from_env()
+
+    seg = SegmentManager(example)
+    seg.load()
+
+    sentences = seg.original_sentences
+    furiganed_sentences = furiganator.generate_furigana(sentences)
+
+    seg.update_texts(furiganed_sentences)
+    seg.save()
+
+
 command_map = {
     'reindex': reindex,
     'waveform': have_fun_waveform,
-    'update': force_speech_recognition,
+    'update': update_one_file,
     'split': force_split_and_play_in_loop,
     'process_incoming': process_incoming,
     'list': list_files,
     'foo': foo_func,
     'convert_ruby': convert_ruby,
-    'remake': remake_one_file,
     'cvt_seg_v3': cvt_seg_from_dict_to_arr,
     'furigana_1': furigana_1,
 }

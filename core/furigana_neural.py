@@ -3,6 +3,14 @@ import re
 
 from openai import OpenAI
 
+PROMPT_1 = """
+Please, add furigana to the following sentences.
+For each kanji, numbers and counters in the sentence, add furigana in the following format:
+[漢字](かんじ)
+Do not add furigana to hiragana, katakana or any other non-kanji characters except numbers and counters.
+Please do not substitute words commonly written in kana only with rarely used kanji.
+Output must not contain anything except result text in the same number of lines as input text.
+"""
 
 def process_numbered_list(text):
     # Split the input into lines
@@ -15,12 +23,13 @@ def process_numbered_list(text):
 
 
 class FuriganaNeural:
-    def __init__(self, api_url, api_key, model):
+    def __init__(self, api_url, api_key, model, prompt=PROMPT_1):
         self.client = OpenAI(
             api_key=api_key,
             base_url=api_url,
         )
         self.model = model
+        self.prompt = prompt.strip()
 
     def _request_ai(self, prompt):
         messages = [
@@ -33,7 +42,7 @@ class FuriganaNeural:
             messages=messages,
             temperature=0.7,
             n=1,
-            max_tokens=4000,
+            max_tokens=5000,
             extra_headers={"X-Title": "SenseiAudioCore"},
         )
 
@@ -44,15 +53,7 @@ class FuriganaNeural:
         if not sentences:
             return []
 
-        text = """
-Please, add furigana to the following sentences.
-For each kanji, numbers and counters in the sentence, add furigana in the following format:
-[漢字](かんじ)
-Do not add furigana to hiragana, katakana or any other non-kanji characters except numbers and counters.
-Please do not substitute words commonly written in kana only with rarely used kanji.
-Output must not contain anything except result text in the same number of lines as input text.
-""".strip()
-
+        text = self.prompt
         text += '\n\n'
         for i, sentence in enumerate(sentences, 1):
             text += f"{i}. {sentence}\n"
