@@ -1,4 +1,5 @@
 import json
+import os
 import shlex
 import subprocess
 
@@ -8,7 +9,7 @@ from pydub.silence import detect_silence
 
 def detect_pieces(audio, padding=200, min_silence_len=1000, silence_thresh=-40):
     # Detect silence longer than 1000 ms (1 second)
-    print("Detecting silence...")
+    print(f"Detecting silence {padding = } ms, {min_silence_len = } ms, {silence_thresh = } dB...")
 
     silences = detect_silence(audio, min_silence_len=min_silence_len, silence_thresh=silence_thresh)
 
@@ -71,7 +72,18 @@ def mp3_length_seconds(path: str) -> float:
     return float(json.loads(out.stdout)['streams'][0]['duration'])
 
 
-def split_file(audio_file, metadata, min_silence_len):
+def split_file(audio_file, metadata):
     metadata.clear()
-    non_silent_segments = detect_pieces(audio_file, min_silence_len=min_silence_len)
+
+    min_silence_len = int(os.environ.get('MIN_SILENCE_LEN_MS', 800))
+    padding = int(os.environ.get('PADDING_MS', 200))
+    silence_thresh = int(os.environ.get('SILENCE_THRESHOLD_DB', -40))
+
+    non_silent_segments = detect_pieces(
+        audio_file,
+        min_silence_len=min_silence_len,
+        padding=padding,
+        silence_thresh=silence_thresh
+    )
+
     metadata.set_segments(non_silent_segments)

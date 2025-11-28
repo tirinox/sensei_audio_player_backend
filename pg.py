@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 
 from core.config import AUDIO_SOURCE_PATH
 from core.file_man import waveform_out_path, ask_to_choose_the_code, is_processed_mp3_lb, \
-    convert_mp3_to_low_bitrate
+    convert_mp3_to_low_bitrate, normalize_mp3_batch
 from core.furigana_neural import FuriganaNeural
 from core.indexer import AudioIndexer
 from core.player import Player
@@ -20,17 +20,11 @@ from core.waveform import audio_to_waveform_png
 load_dotenv()
 
 
-def force_split_and_play_in_loop():
+def play_demo_segments():
     example = get_example()
     print("Processing example:", example)
 
     player = Player(example)
-
-    player.ready = False
-    if not player.ready:
-        print("Failed to load segments. Splitting the file.")
-        split_file(player.audio, player.metadata, min_silence_len=800)
-        player.metadata.save()
 
     while True:
         player.play_current_segment()
@@ -74,7 +68,7 @@ def force_speech_recognition(example, skip_existing_text=True, force_split=False
     metadata = SegmentManager(example)
 
     if force_split or not metadata.load():
-        split_file(audio_file, metadata, min_silence_len=800)
+        split_file(audio_file, metadata)
         metadata.save()
 
     fill_text_for(metadata, audio=audio_file, skip_existing=skip_existing_text)
@@ -96,6 +90,13 @@ def have_fun_waveform(query='ここはどこですか'):
     # player.play_segment(5)
 
     audio_to_waveform_png(player.audio, output_path=waveform_out_path(example, index))
+
+
+def normalize_all_volumes():
+    code = ask_to_choose_the_code()
+    indexer = AudioIndexer.from_code(code)
+    all_files = indexer.get_all_mp3()
+    normalize_mp3_batch(all_files)
 
 
 def reindex(code=None):
@@ -137,7 +138,7 @@ def process_incoming(only_new=True):
     for file in tqdm.tqdm(all_files):
         if not is_processed_mp3_lb(file):
             # new file detected, convert and rename
-            new_full_name = convert_mp3_to_low_bitrate(file)
+            new_full_name = convert_mp3_to_low_bitrate(file, normalize_volume=True)
 
             new_files.append(new_full_name)
 
@@ -247,13 +248,14 @@ command_map = {
     'reindex': reindex,
     'waveform': have_fun_waveform,
     'update': update_one_file,
-    'split': force_split_and_play_in_loop,
+    'play_demo': play_demo_segments,
     'process_incoming': process_incoming,
     'list': list_files,
     'foo': foo_func,
     'convert_ruby': convert_ruby,
     'cvt_seg_v3': cvt_seg_from_dict_to_arr,
     'furigana_1': furigana_1,
+    'normalize_volumes': normalize_all_volumes,
 }
 
 if __name__ == '__main__':

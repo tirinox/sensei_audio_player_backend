@@ -2,7 +2,7 @@ import json
 import os.path
 
 from core.furigana import convert_ruby_to_parenthesis
-from core.splitter import load_audio_file, mp3_length_seconds
+from core.splitter import mp3_length_seconds
 
 
 class SegmentManager:
