@@ -2,7 +2,11 @@ import re
 
 import MeCab
 import jaconv
-import pykakasi
+try:
+    import pykakasi
+except ImportError:
+    print("Warning: pykakasi module not found. FuriganaClassic will not work.")
+    pykakasi = None
 
 
 def add_furigana(sentence):
