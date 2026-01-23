@@ -57,21 +57,6 @@ def detect_pieces(audio, padding=200, min_silence_len=1000, silence_thresh=-40):
     return non_silent_segments
 
 
-def load_audio_file(file_path):
-    try:
-        return AudioSegment.from_mp3(file_path)
-    except Exception as e:
-        print(f"Failed to load audio file: {e}")
-        raise
-
-
-def mp3_length_seconds(path: str) -> float:
-    cmd = f'ffprobe -v error -select_streams a:0 ' \
-          f'-show_entries stream=duration -of json {shlex.quote(str(path))}'
-    out = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
-    return float(json.loads(out.stdout)['streams'][0]['duration'])
-
-
 def split_file(audio_file, metadata):
     metadata.clear()
 

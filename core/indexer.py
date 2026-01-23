@@ -1,10 +1,10 @@
 import json
 import os.path
 
+from core.audio_utils import mp3_length_seconds
 from core.config import AUDIO_SOURCE_PATH
 from core.file_man import get_all_mp3
 from core.segment_man import SegmentManager
-from core.splitter import mp3_length_seconds
 
 
 class AudioIndexer:

@@ -1,8 +1,9 @@
 import json
 import os.path
+from typing import Dict, List
 
+from core.audio_utils import mp3_length_seconds
 from core.furigana import convert_ruby_to_parenthesis
-from core.splitter import mp3_length_seconds
 
 
 class SegmentManager:
@@ -17,7 +18,7 @@ class SegmentManager:
 
     def __init__(self, filename):
         self._filename = filename
-        self.segments = []
+        self.segments: List[Dict] = []
         self.title = os.path.basename(filename)
         self.length = 0
 

@@ -1,7 +1,7 @@
 from pydub.playback import play
 
+from core.audio_utils import load_audio_file
 from core.segment_man import SegmentManager
-from core.splitter import load_audio_file
 
 
 class Player:

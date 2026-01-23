@@ -4,17 +4,17 @@ import sys
 import tqdm
 from dotenv import load_dotenv
 
+from core.audio_utils import normalize_mp3_batch, convert_mp3_to_low_bitrate, load_audio_file, mp3_length_seconds, \
+    au_sep
 from core.config import AUDIO_SOURCE_PATH
-from core.file_man import waveform_out_path, ask_to_choose_the_code, is_processed_mp3_lb, \
-    convert_mp3_to_low_bitrate, normalize_mp3_batch
+from core.file_man import waveform_out_path, ask_to_choose_the_code, is_processed_mp3_lb
 from core.furigana_neural import FuriganaNeural
 from core.indexer import AudioIndexer
 from core.player import Player
 from core.process_segments import fill_text_for
 from core.segment_man import SegmentManager
-from core.splitter import load_audio_file, split_file, mp3_length_seconds
+from core.splitter import split_file
 from core.tui import run_menu
-from core.utils import au_sep
 from core.waveform import audio_to_waveform_png
 
 load_dotenv()
@@ -180,6 +180,10 @@ def foo_func():
 
     seconds = mp3_length_seconds(example)
     print(f"Length of {example}: {seconds} seconds")
+
+    normalize_mp3_batch([
+        example
+    ])
 
 
 def convert_ruby():

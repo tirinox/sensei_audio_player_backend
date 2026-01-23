@@ -1,9 +1,9 @@
 from dotenv import load_dotenv
 from tqdm import tqdm
 
+from core.audio_utils import load_audio_file
 from core.segment_man import SegmentManager
 from core.speech import SpeechRecognitionWhisper
-from core.splitter import load_audio_file
 
 load_dotenv()
 
