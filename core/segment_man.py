@@ -22,6 +22,12 @@ class SegmentManager:
         self.title = os.path.basename(filename)
         self.length = 0
 
+    def get_digest(self):
+        digest_str = ""
+        for segment in self.segments:
+            digest_str += segment.get("original_text") or segment.get("text", "") or ""
+        return digest_str
+
     @property
     def sorted_segments(self):
         return self.segments

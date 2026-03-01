@@ -41,6 +41,7 @@ class AudioIndexer:
                     "n_segments": len(seg.segments),
                     "length": len_sec,
                     "title": just_filename,
+                    "digest": seg.get_digest(),
                 })
 
         return files
