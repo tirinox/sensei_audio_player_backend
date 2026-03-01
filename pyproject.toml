@@ -10,6 +10,7 @@ dependencies = [
     "mecab-python3>=1.0.12",
     "numpy<2.1",
     "openai>=2.15.0",
+    "openai-whisper>=20250625",
     "pillow>=12.1.0",
     "pydub>=0.25.1",
     "python-dotenv>=1.2.1",
@@ -17,5 +18,4 @@ dependencies = [
     "speechrecognition>=3.14.5",
     "streamlit>=1.53.1",
     "tqdm>=4.67.1",
-    "whisper>=1.1.10",
 ]

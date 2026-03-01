@@ -24,6 +24,10 @@ upload: # Upload the audio files.
 update: # Rescan the audio file using specified pause duration
 	python pg.py update
 
+.PHONY: furiganate
+furiganate: # Furiganate the database entries.
+	python pg.py furiganate
+
 .PHONY: foo
 foo: # Placeholder for future tasks.
 	python pg.py foo

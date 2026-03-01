@@ -258,7 +258,7 @@ command_map = {
     'foo': foo_func,
     'convert_ruby': convert_ruby,
     'cvt_seg_v3': cvt_seg_from_dict_to_arr,
-    'furigana_1': furigana_1,
+    'furiganate': furigana_1,
     'normalize_volumes': normalize_all_volumes,
 }
 

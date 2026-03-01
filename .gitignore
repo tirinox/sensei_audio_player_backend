@@ -166,3 +166,5 @@ audio_db/
 # Credentials folder
 cred/
 waveform.png
+
+temp/
