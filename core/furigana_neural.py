@@ -4,12 +4,47 @@ import re
 from openai import OpenAI
 
 PROMPT_1 = """
-Please, add furigana to the following sentences.
-For each kanji, numbers and counters in the sentence, add furigana in the following format:
-[漢字](かんじ)
-Do not add furigana to hiragana, katakana or any other non-kanji characters except numbers and counters.
-Please do not substitute words commonly written in kana only with rarely used kanji.
-Output must not contain anything except result text in the same number of lines as input text.
+You are a Japanese text processor.
+
+Task:
+Add furigana to ALL kanji in the input text.
+
+Rules:
+
+1. For each kanji character or kanji compound, wrap it using this exact format:
+   [漢字](かんじ)
+
+2. If a number is written using Arabic numerals and followed by a counter,
+   wrap both number and counter together:
+   Example:
+   3人 → [3人](さんにん)
+
+3. Do NOT add furigana to:
+   - hiragana
+   - katakana
+   - punctuation
+   - particles
+   - words normally written only in kana
+
+4. Do NOT:
+   - change wording
+   - paraphrase
+   - replace kana words with kanji
+   - add explanations
+   - add extra spaces
+   - add empty lines
+
+5. Output must:
+   - contain exactly the same number of lines as input
+   - contain ONLY the processed text
+
+Example:
+
+Input:
+今日は3人で学校へ行きます。
+
+Output:
+[今日](きょう)は[3人](さんにん)で[学校](がっこう)へ[行](い)きます。
 """
 
 def process_numbered_list(text):
