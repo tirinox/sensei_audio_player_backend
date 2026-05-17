@@ -58,7 +58,7 @@ def get_example():
     return example
 
 
-def force_speech_recognition(example, skip_existing_text=True, force_split=False):
+def force_speech_recognition(example, skip_existing_text=True, force_split=False, min_silence_len_ms=None):
     if not example:
         raise ValueError("Example file path is required.")
 
@@ -68,7 +68,7 @@ def force_speech_recognition(example, skip_existing_text=True, force_split=False
     metadata = SegmentManager(example)
 
     if force_split or not metadata.load():
-        split_file(audio_file, metadata)
+        split_file(audio_file, metadata, min_silence_len=min_silence_len_ms)
         metadata.save()
 
     fill_text_for(metadata, audio=audio_file, skip_existing=skip_existing_text)
@@ -234,7 +234,29 @@ def furigana_1():
 def update_one_file():
     example = get_example()
 
-    force_speech_recognition(example, skip_existing_text=False, force_split=True)
+    default_min_silence_len_ms = int(os.environ.get('MIN_SILENCE_LEN_MS', 800))
+
+    while True:
+        min_pause_raw = input(
+            f"Минимальная пауза между фразами в мс [{default_min_silence_len_ms}]: "
+        ).strip()
+
+        if not min_pause_raw:
+            min_silence_len_ms = None
+            break
+
+        if min_pause_raw.isdigit() and int(min_pause_raw) > 0:
+            min_silence_len_ms = int(min_pause_raw)
+            break
+
+        print("Введите положительное число в миллисекундах или просто нажмите Enter для значения по умолчанию.")
+
+    force_speech_recognition(
+        example,
+        skip_existing_text=False,
+        force_split=True,
+        min_silence_len_ms=min_silence_len_ms,
+    )
 
     furiganator = FuriganaNeural.from_env()
 

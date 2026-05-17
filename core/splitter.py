@@ -57,10 +57,11 @@ def detect_pieces(audio, padding=200, min_silence_len=1000, silence_thresh=-40):
     return non_silent_segments
 
 
-def split_file(audio_file, metadata):
+def split_file(audio_file, metadata, min_silence_len=None):
     metadata.clear()
 
-    min_silence_len = int(os.environ.get('MIN_SILENCE_LEN_MS', 800))
+    if min_silence_len is None:
+        min_silence_len = int(os.environ.get('MIN_SILENCE_LEN_MS', 800))
     padding = int(os.environ.get('PADDING_MS', 200))
     silence_thresh = int(os.environ.get('SILENCE_THRESHOLD_DB', -40))
 
