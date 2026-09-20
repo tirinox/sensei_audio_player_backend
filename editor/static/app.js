@@ -88,12 +88,24 @@ createApp({
         const historyOpen = ref(false)
         const backups = ref([])
 
+        const jobs = ref([])
+        const jobsOpen = ref(false)
+        const logJobId = ref(null)
+        const logEl = ref(null)
+        const fakeAi = ref(false)
+        const upload = reactive({open: false, preflight: null, armed: false})
+        const splitDefaults = ref({min_silence_len: 800, padding: 200, silence_thresh: -40})
+        // index < 0: the whole file, otherwise only that segment; pieces: the preview drawn on the wave
+        const split = reactive({open: false, index: -1, min_silence_len: 800, padding: 200, silence_thresh: -40, pieces: null, note: ''})
+
         // wavesurfer objects are kept out of Vue reactivity
         let wave = null
         let regions = null
         let stopAt = null
         let lastSecond = -1
         let armedTimer = null
+        let previewTimer = null
+        let previewSerial = 0
 
         const stageChips = computed(() => STAGES.map(s => ({
             ...s, count: files.value.filter(f => f.stage === s.stage).length,
@@ -105,6 +117,85 @@ createApp({
                 (!stageFilter.value || f.stage === stageFilter.value) &&
                 (!needle || f.name.toLowerCase().includes(needle) || f.title.toLowerCase().includes(needle)))
         })
+
+        const locked = computed(() => busy.value || !!(current.value && current.value.busy))
+        const plainCount = computed(() => current.value ? current.value.segments.filter(s => s.text && s.original_text === undefined).length : 0)
+        const staleCount = computed(() => files.value.filter(f => f.index_stale).length)
+        const codeBusy = computed(() => jobs.value.some(j => j.code === code.value && !j.name && isActive(j)))
+        const canApplySplit = computed(() => split.pieces && split.pieces.length >= (split.index < 0 ? 1 : 2))
+
+        const activeJobs = computed(() => jobs.value.filter(isActive))
+        const jobsNewestFirst = computed(() => [...jobs.value].reverse())
+        const jobsSummary = computed(() => {
+            const running = jobs.value.filter(j => j.status === 'running').length
+            const queued = jobs.value.filter(j => j.status === 'queued').length
+            const failed = jobs.value.filter(j => j.status === 'failed').length
+            return [running && `${running} running`, queued && `${queued} queued`, failed && `${failed} failed`]
+                .filter(Boolean).join(', ') || 'all done'
+        })
+        const logText = computed(() => {
+            const job = jobs.value.find(j => j.id === logJobId.value)
+            if (!job) return 'Pick a job to see its log'
+            return [...(job.log || []), job.error ? `ERROR: ${job.error}` : ''].join('\n')
+        })
+
+        // ---- upload wizard: its state is the state of the last upload_dry / upload job ----
+
+        const UPLOAD_KINDS = ['upload_dry', 'upload']
+        const WARNING_LABELS = {incoming: 'incoming', unsplit: 'not split', no_text: 'no text', no_furigana: 'no furigana'}
+
+        const uploadJob = computed(() => [...jobs.value].reverse().find(j => UPLOAD_KINDS.includes(j.kind)) || null)
+        const uploadRunning = computed(() => !!uploadJob.value && isActive(uploadJob.value))
+        const uploadDone = computed(() => !!uploadJob.value && uploadJob.value.kind === 'upload' && !isActive(uploadJob.value))
+        const dryRun = computed(() => uploadJob.value && uploadJob.value.kind === 'upload_dry' && !isActive(uploadJob.value) ? uploadJob.value : null)
+        const canUpload = computed(() => !!dryRun.value && dryRun.value.status === 'done' && !staleCodes.value.length
+            && !(upload.preflight && upload.preflight.blocker))
+        const uploadTail = computed(() => uploadJob.value && uploadJob.value.log.length ? uploadJob.value.log[uploadJob.value.log.length - 1] : '')
+        const staleCodes = computed(() => upload.preflight ? upload.preflight.codes.filter(c => c.stale).map(c => c.code) : [])
+        const uploadWarnings = computed(() => {
+            const warnings = []
+            for (const c of upload.preflight ? upload.preflight.codes : []) {
+                for (const kind of Object.keys(WARNING_LABELS)) {
+                    if (c[kind].length) warnings.push({code: c.code, kind, label: WARNING_LABELS[kind], names: c[kind]})
+                }
+            }
+            return warnings
+        })
+
+        async function loadPreflight() {
+            await guarded(async () => upload.preflight = await api('/api/upload/preflight'))
+        }
+
+        async function openUpload() {
+            upload.open = true
+            upload.armed = false
+            upload.preflight = null
+            await loadPreflight()
+        }
+
+        async function submitUpload(kind) {
+            upload.armed = false
+            try {
+                await api('/api/jobs', 'POST', {kind})
+            } catch (e) {
+                error.value = e.message
+                upload.open = false
+            }
+        }
+
+        // the first click arms the button, the second one uploads
+        function confirmUpload() {
+            if (!upload.armed) {
+                upload.armed = true
+                setTimeout(() => upload.armed = false, 5000)
+                return
+            }
+            return submitUpload('upload')
+        }
+
+        function isActive(job) {
+            return job.status === 'queued' || job.status === 'running'
+        }
 
         function stageText(f) {
             switch (f.stage) {
@@ -160,22 +251,38 @@ createApp({
         function paintRegions() {
             if (!regions) return
             for (const region of regions.getRegions()) {
-                region.setOptions({color: regionColor(Number(region.id))})
+                if (!region.id.startsWith('preview')) region.setOptions({color: regionColor(Number(region.id))})
             }
         }
 
         function renderRegions() {
             if (!regions || waveLoading.value) return
             regions.clearRegions()
-            current.value.segments.forEach((s, i) => regions.addRegion({
-                id: String(i),
-                start: s.start / 1000,
-                end: s.end / 1000,
-                content: String(i + 1),
-                color: regionColor(i),
-                drag: false,
-                resize: false,
-            }))
+            const previewing = split.open && split.pieces
+            current.value.segments.forEach((s, i) => {
+                // a preview replaces the segments it is about to replace
+                if (previewing && (split.index < 0 || split.index === i)) return
+                regions.addRegion({
+                    id: String(i),
+                    start: s.start / 1000,
+                    end: s.end / 1000,
+                    content: String(i + 1),
+                    color: regionColor(i),
+                    drag: false,
+                    resize: false,
+                })
+            })
+            if (previewing) {
+                split.pieces.forEach((piece, n) => regions.addRegion({
+                    id: `preview-${n}`,
+                    start: piece.start / 1000,
+                    end: piece.end / 1000,
+                    content: String(n + 1),
+                    color: cssVar('--region-preview'),
+                    drag: false,
+                    resize: false,
+                }))
+            }
         }
 
         function createWave(details) {
@@ -230,10 +337,19 @@ createApp({
             wave.on('interaction', () => stopAt = null)
 
             // a click moves the cursor (to cut there) and selects the segment, a double click plays it
-            regions.on('region-clicked', region => setActive(Number(region.id)))
+            regions.on('region-clicked', region => {
+                if (!region.id.startsWith('preview')) setActive(Number(region.id))
+            })
             regions.on('region-double-clicked', (region, e) => {
                 e.stopPropagation()
-                playSegment(Number(region.id))
+                if (region.id.startsWith('preview')) {
+                    // listen to a piece of the preview
+                    stopAt = region.end
+                    wave.setTime(region.start)
+                    wave.play()
+                } else {
+                    playSegment(Number(region.id))
+                }
             })
         }
 
@@ -283,6 +399,8 @@ createApp({
             current.value = details
             editIndex.value = -1
             armedDelete.value = -1
+            split.open = false
+            split.pieces = null
             segmentEls.value = []
             activeIndex.value = Math.min(active, details.segments.length - 1)
             renderRegions()
@@ -295,7 +413,7 @@ createApp({
         }
 
         async function change(path, body, active, method = 'POST') {
-            if (busy.value) return
+            if (locked.value) return
             busy.value = true
             try {
                 await guarded(async () => applyDetails(await api(fileUrl() + path, method, body), active))
@@ -310,6 +428,7 @@ createApp({
         }
 
         async function startEdit(i) {
+            if (locked.value) return
             const s = current.value.segments[i]
             draft.text = s.text || ''
             draft.original_text = s.original_text === undefined ? null : s.original_text
@@ -350,6 +469,128 @@ createApp({
                 return
             }
             return change(`/segments/${i}/delete`, segmentRef(i), i)
+        }
+
+        // ---- re-splitting with a preview on the wave ----
+
+        function openSplit(i) {
+            if (split.open && split.index === i) return closeSplit()
+            Object.assign(split, splitDefaults.value, {open: true, index: i, pieces: null, note: ''})
+            if (i >= 0) split.min_silence_len = Math.min(400, split.min_silence_len)  // it did not split with the default
+            requestPreview()
+        }
+
+        function closeSplit() {
+            split.open = false
+            split.pieces = null
+            renderRegions()
+        }
+
+        function splitBody(preview) {
+            const params = {min_silence_len: split.min_silence_len, padding: split.padding, silence_thresh: split.silence_thresh, preview}
+            return split.index < 0 ? params : segmentRef(split.index, params)
+        }
+
+        function splitPath() {
+            return split.index < 0 ? '/split' : `/segments/${split.index}/resplit`
+        }
+
+        function requestPreview() {
+            clearTimeout(previewTimer)
+            previewTimer = setTimeout(() => guarded(async () => {
+                const serial = ++previewSerial
+                const result = await api(fileUrl() + splitPath(), 'POST', splitBody(true))
+                if (serial !== previewSerial || !split.open) return
+                split.pieces = result.pieces
+                renderRegions()
+            }), 150)
+        }
+
+        async function suggestPause() {
+            await guarded(async () => {
+                const result = await api(fileUrl() + '/suggest_pause')
+                if (result.suggestion) {
+                    split.min_silence_len = result.suggestion
+                    split.note = `${result.pauses.length} pauses found, the border between short and long ones is about ${result.suggestion} ms`
+                } else {
+                    split.note = 'Too few pauses to guess'
+                }
+            })
+        }
+
+        async function applySplit(thenProcess) {
+            const name = current.value.name
+            await change(splitPath(), splitBody(false), Math.max(split.index, 0))
+            if (thenProcess && !error.value) await submitJob('transcribe', name, {}, ['furigana'])
+        }
+
+        watch(() => [split.min_silence_len, split.padding, split.silence_thresh], () => split.open && requestPreview())
+
+        // ---- background jobs; their state comes through server-sent events ----
+
+        async function submitJob(kind, name = current.value && current.value.name, params = {}, then = []) {
+            await guarded(async () => {
+                await api('/api/jobs', 'POST', {kind, code: code.value, name, params, then})
+                jobsOpen.value = true
+            })
+        }
+
+        const cancelJob = id => guarded(() => api(`/api/jobs/${id}/cancel`, 'POST'))
+
+        async function reloadCurrent() {
+            if (!current.value || editIndex.value >= 0) return
+            await guarded(async () => {
+                const details = await api(fileUrl())
+                const playingNow = activeIndex.value
+                applyDetails(details, playingNow)
+            })
+        }
+
+        async function onJobEvent(job) {
+            const at = jobs.value.findIndex(j => j.id === job.id)
+            const previous = at >= 0 ? jobs.value[at] : null
+            const merged = {...job, log: previous ? previous.log : []}
+            if (previous) jobs.value[at] = merged
+            else jobs.value.push(merged)
+            if (job.status === 'running' && (!previous || previous.status !== 'running')) logJobId.value = job.id
+
+            if (UPLOAD_KINDS.includes(job.kind)) {
+                if (isActive(job)) return reloadCurrent()  // everything is locked while it runs
+                // the dry run reindexes stale codes
+                if (upload.open) await loadPreflight()
+                await loadFiles()
+                return reloadCurrent()
+            }
+
+            if (job.code !== code.value) return
+            const aboutCurrent = current.value && (job.name === current.value.name || !job.name)
+            const finished = !isActive(job)
+            if (finished || !previous || previous.status !== job.status) await loadFiles()
+
+            if (finished && job.result && current.value && job.name === current.value.name) {
+                await openFile(job.result)  // converted: the file has a new name now
+            } else if (aboutCurrent) {
+                await reloadCurrent()  // texts show up while the transcription goes on
+            }
+        }
+
+        function connectEvents() {
+            const source = new EventSource('/api/events')
+            source.onmessage = message => {
+                const event = JSON.parse(message.data)
+                if (event.type === 'jobs') {
+                    jobs.value = event.jobs
+                    fakeAi.value = event.fake_ai
+                } else if (event.type === 'job') {
+                    onJobEvent(event.job)
+                } else if (event.type === 'log') {
+                    const job = jobs.value.find(j => j.id === event.id)
+                    if (job) {
+                        job.log.push(event.line)
+                        if (job.id === logJobId.value) nextTick(() => logEl.value && (logEl.value.scrollTop = logEl.value.scrollHeight))
+                    }
+                }
+            }
         }
 
         async function loadBackups() {
@@ -405,6 +646,8 @@ createApp({
             const data = await api('/api/codes')
             codes.value = data.codes
             sourcePath.value = data.source_path
+            splitDefaults.value = data.split_defaults
+            connectEvents()
 
             const [hashCode, hashName] = location.hash.slice(1).split('/').map(decodeURIComponent)
             const known = data.codes.map(c => c.code)
@@ -420,6 +663,11 @@ createApp({
             waveEl, waveLoading, playing, time, duration, zoom, rate, stopAtEnd, activeIndex, segmentEls,
             busy, cursorIndex, editIndex, editInput, draft, armedDelete, historyOpen, backups,
             loadFiles, openFile, playSegment, togglePlay, stageText, stepClass, rubyHtml, fmtTime, fmtDate, plainOf,
+            jobs, jobsOpen, logJobId, logEl, fakeAi, split, locked, plainCount, staleCount, codeBusy, canApplySplit,
+            activeJobs, jobsNewestFirst, jobsSummary, logText,
+            upload, uploadJob, uploadRunning, uploadDone, dryRun, canUpload, uploadTail, staleCodes, uploadWarnings,
+            openUpload, submitUpload, confirmUpload,
+            openSplit, closeSplit, suggestPause, applySplit, submitJob, cancelJob,
             startEdit, saveText, dropFurigana, joinNext, cut, deleteSegment, toggleHistory, restore, undo,
         }
     },

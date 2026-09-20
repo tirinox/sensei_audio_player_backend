@@ -17,6 +17,10 @@
                 </select>
                 <button class="icon" @click="loadFiles()" title="Rescan the directory">↻</button>
             </div>
+            <button v-if="staleCount" @click="submitJob('reindex', null)" :disabled="codeBusy"
+                    title="index.json does not match the segment files; the player frontend reads index.json">
+                Reindex · {{ staleCount }} stale
+            </button>
             <input type="search" v-model="filter" placeholder="Filter files…">
             <div class="chips">
                 <button v-for="s in stageChips" :key="s.stage" class="chip" :class="[s.stage, {on: stageFilter === s.stage}]"
@@ -29,13 +33,16 @@
         <ul class="files">
             <li v-for="f in visibleFiles" :key="f.name" :class="{active: current && current.name === f.name}"
                 @click="openFile(f.name)">
-                <span class="dot" :class="f.stage"></span>
+                <span class="dot" :class="[f.stage, {spin: f.busy}]"></span>
                 <span class="file-name" :title="f.name">{{ f.title }}</span>
                 <span class="badge" :class="f.stage">{{ stageText(f) }}</span>
                 <span v-if="f.index_stale" class="badge stale" title="index.json does not match the segments, reindex is needed">idx</span>
             </li>
             <li v-if="!visibleFiles.length" class="empty">No files</li>
         </ul>
+        <div class="sidebar-upload">
+            <button @click="openUpload()">⇪ Upload to the host…</button>
+        </div>
         <footer class="sidebar-foot" :title="sourcePath">{{ sourcePath }}</footer>
     </aside>
 
@@ -51,14 +58,14 @@
                     <div class="sub">{{ current.code }} / {{ current.name }}</div>
                 </div>
                 <div class="history">
-                    <button @click="undo()" :disabled="busy" title="Restore the version saved before the last change">↩ Undo</button>
+                    <button @click="undo()" :disabled="locked" title="Restore the version saved before the last change">↩ Undo</button>
                     <button @click="toggleHistory()" :class="{on: historyOpen}">History ▾</button>
                     <div v-if="historyOpen" class="popover">
                         <div v-if="!backups.length" class="muted">No saved versions yet</div>
                         <div v-for="b in backups" :key="b.name" class="backup">
                             <span class="grow">{{ fmtDate(b.time) }}</span>
                             <span class="muted">before {{ b.label || 'change' }} · {{ b.n_segments }} seg</span>
-                            <button @click="restore(b.name)" :disabled="busy">Restore</button>
+                            <button @click="restore(b.name)" :disabled="locked">Restore</button>
                         </div>
                     </div>
                 </div>
@@ -71,6 +78,48 @@
                 </div>
             </header>
 
+            <section class="pipeline">
+                <template v-if="!current.processed">
+                    <button @click="submitJob('convert')" :disabled="locked">Convert</button>
+                    <button class="primary" @click="submitJob('convert', current.name, {}, ['split', 'transcribe', 'furigana'])" :disabled="locked"
+                            title="Convert, split, transcribe and furiganate">Process fully</button>
+                    <span class="muted">The original goes to backups/originals, the converted copy gets the lb_ prefix</span>
+                </template>
+                <template v-else>
+                    <button @click="openSplit(-1)" :disabled="locked" :class="{on: split.open && split.index < 0}">Split…</button>
+                    <button @click="submitJob('transcribe')" :disabled="locked || current.n_text >= current.n_segments"
+                            title="Whisper for the segments without text">Transcribe · {{ current.n_segments - current.n_text }} empty</button>
+                    <button @click="submitJob('furigana')" :disabled="locked || !plainCount"
+                            title="LLM furigana for the segments that have text but no furigana">Furigana · {{ plainCount }} plain</button>
+                    <button v-if="!current.n_segments" class="primary" @click="submitJob('split', current.name, {}, ['transcribe', 'furigana'])"
+                            :disabled="locked" title="Split with the default parameters, transcribe and furiganate">Process fully</button>
+                </template>
+                <span v-if="current.busy" class="busy-note"><span class="dot spin no_text"></span> a job is queued or running for this file, editing is locked</span>
+            </section>
+
+            <section v-if="split.open" class="split-panel">
+                <div class="split-title">
+                    <b>{{ split.index < 0 ? 'Split the whole file' : `Re-split segment ${split.index + 1}` }}</b>
+                    <span class="muted" v-if="split.pieces">
+                        → {{ split.pieces.length }} pieces
+                        <template v-if="split.index < 0">(now {{ current.n_segments }}); all texts will be cleared</template>
+                        <template v-else>; the text of this segment will be cleared</template>
+                    </span>
+                </div>
+                <label>min pause <input type="range" min="100" max="2000" step="50" v-model.number="split.min_silence_len"> <output>{{ split.min_silence_len }} ms</output></label>
+                <label>padding <input type="range" min="0" max="500" step="25" v-model.number="split.padding"> <output>{{ split.padding }} ms</output></label>
+                <label>silence below <input type="range" min="-60" max="-20" step="1" v-model.number="split.silence_thresh"> <output>{{ split.silence_thresh }} dB</output></label>
+                <div class="row">
+                    <button v-if="split.index < 0" @click="suggestPause()" title="Guess the pause between phrases from the pauses of this recording">Suggest pause</button>
+                    <span class="muted" v-if="split.note">{{ split.note }}</span>
+                    <span class="grow"></span>
+                    <button @click="closeSplit()">Cancel</button>
+                    <button @click="applySplit(false)" :disabled="locked || !canApplySplit">Apply</button>
+                    <button class="primary" @click="applySplit(true)" :disabled="locked || !canApplySplit"
+                            title="Apply, then transcribe the empty segments and furiganate them">Apply + transcribe + furigana</button>
+                </div>
+            </section>
+
             <section class="wave-box">
                 <div ref="waveEl" class="wave"></div>
                 <div v-if="waveLoading" class="wave-loading">Loading audio…</div>
@@ -82,7 +131,7 @@
                 <button @click="playSegment(activeIndex)" :disabled="activeIndex < 0" title="Enter">↺ Repeat</button>
                 <button @click="playSegment(activeIndex + 1)" :disabled="activeIndex >= current.segments.length - 1" title="↓">Next ⏭</button>
                 <label class="check"><input type="checkbox" v-model="stopAtEnd"> stop at segment end</label>
-                <button @click="cut(cursorIndex, true)" :disabled="cursorIndex < 0 || busy"
+                <button @click="cut(cursorIndex, true)" :disabled="cursorIndex < 0 || locked"
                         title="C: cut the segment under the cursor; snaps to a pause if the cursor is in one">✂ Cut at cursor</button>
                 <span class="time">{{ fmtTime(time) }} / {{ fmtTime(duration) }}</span>
                 <span class="grow"></span>
@@ -116,10 +165,10 @@
                             </div>
                         </template>
                         <div class="row edit-actions">
-                            <button class="primary" @click="saveText()" :disabled="busy">Save ⏎</button>
+                            <button class="primary" @click="saveText()" :disabled="locked">Save ⏎</button>
                             <button @click="editIndex = -1">Cancel</button>
                             <span class="grow"></span>
-                            <button v-if="draft.original_text !== null" @click="dropFurigana(i)" :disabled="busy"
+                            <button v-if="draft.original_text !== null" @click="dropFurigana(i)" :disabled="locked"
                                     title="Back to the plain text; the segment will count as not furiganated">Remove furigana</button>
                         </div>
                     </div>
@@ -137,10 +186,14 @@
                             </span>
                         </div>
                         <div class="seg-actions">
-                            <button @click="startEdit(i)" title="Edit the text (double click)">✎</button>
-                            <button @click="cut(i, false)" :disabled="busy" title="Cut at the longest pause inside">✂ auto</button>
-                            <button @click="joinNext(i)" :disabled="busy || i === current.segments.length - 1" title="Join with the next segment">⇣ join</button>
-                            <button @click="deleteSegment(i)" :disabled="busy" :class="{danger: armedDelete === i}"
+                            <button @click="startEdit(i)" :disabled="locked" title="Edit the text (double click)">✎</button>
+                            <button @click="submitJob('furigana_segment', current.name, {i, start: s.start, end: s.end})" :disabled="locked || !s.text"
+                                    title="Make furigana for this segment again (LLM), from its plain text">ふ</button>
+                            <button @click="cut(i, false)" :disabled="locked" title="Cut at the longest pause inside">✂ auto</button>
+                            <button @click="openSplit(i)" :disabled="locked" :class="{on: split.open && split.index === i}"
+                                    title="Re-split only this segment with other pause parameters">✂ …</button>
+                            <button @click="joinNext(i)" :disabled="locked || i === current.segments.length - 1" title="Join with the next segment">⇣ join</button>
+                            <button @click="deleteSegment(i)" :disabled="locked" :class="{danger: armedDelete === i}"
                                     title="Delete the segment">{{ armedDelete === i ? 'Sure?' : '🗑' }}</button>
                         </div>
                     </div>
@@ -148,6 +201,97 @@
             </section>
         </template>
     </main>
+
+    <div v-if="upload.open" class="overlay" @click.self="upload.open = false">
+        <section class="modal">
+            <header>
+                <h2>Upload to the host</h2>
+                <span v-if="upload.preflight && upload.preflight.fake" class="badge no_text" title="EDITOR_UPLOAD_CMD is set: nothing is really uploaded">fake upload</span>
+                <span class="grow"></span>
+                <button class="icon" @click="upload.open = false">✕</button>
+            </header>
+
+            <div v-if="!upload.preflight" class="muted">Checking…</div>
+            <template v-else>
+                <p class="muted">
+                    Everything under <code>{{ upload.preflight.source_path }}</code> is mirrored to the production host with
+                    <code>rsync --delete</code>: files that are not here are removed there.
+                </p>
+                <div v-if="upload.preflight.blocker" class="error">{{ upload.preflight.blocker }}</div>
+
+                <h3>1. Not finished yet</h3>
+                <div v-if="!uploadWarnings.length" class="ok-line">✓ Every file is converted, split, transcribed and furiganated</div>
+                <ul v-else class="warnings">
+                    <li v-for="w in uploadWarnings" :key="w.code + w.kind">
+                        <span class="badge" :class="w.kind">{{ w.label }}</span>
+                        <b>{{ w.code }}</b> · {{ w.names.length }} file{{ w.names.length > 1 ? 's' : '' }}:
+                        <span class="muted">{{ w.names.slice(0, 4).join(', ') }}{{ w.names.length > 4 ? `, +${w.names.length - 4} more` : '' }}</span>
+                    </li>
+                </ul>
+                <p v-if="uploadWarnings.length" class="muted">They will be uploaded as they are. This does not block the upload.</p>
+
+                <h3>2. Check what will change</h3>
+                <div class="row">
+                    <button @click="submitUpload('upload_dry')" :disabled="uploadRunning || !!upload.preflight.blocker">
+                        {{ staleCodes.length ? `Reindex ${staleCodes.join(', ')} and dry run` : 'Dry run' }}
+                    </button>
+                    <span v-if="uploadRunning" class="busy-note"><span class="dot spin no_text"></span> {{ uploadJob.kind === 'upload' ? 'uploading' : 'checking' }}… {{ uploadTail }}</span>
+                </div>
+                <template v-if="dryRun">
+                    <div v-if="dryRun.status === 'failed'" class="error">The dry run failed: {{ dryRun.error }}</div>
+                    <template v-else-if="dryRun.data">
+                        <div class="ok-line" v-if="!dryRun.data.upload.length && !dryRun.data.delete.length">✓ The host is up to date, nothing to upload</div>
+                        <details v-if="dryRun.data.upload.length" open>
+                            <summary>{{ dryRun.data.upload.length }} files to upload</summary>
+                            <ul class="paths"><li v-for="path in dryRun.data.upload" :key="path">{{ path }}</li></ul>
+                        </details>
+                        <details v-if="dryRun.data.delete.length" open class="deleting">
+                            <summary>{{ dryRun.data.delete.length }} to DELETE on the host</summary>
+                            <ul class="paths"><li v-for="path in dryRun.data.delete" :key="path">{{ path }}</li></ul>
+                        </details>
+                        <p v-if="dryRun.data.reindexed.length" class="muted">Reindexed before the check: {{ dryRun.data.reindexed.join(', ') }}</p>
+                    </template>
+                </template>
+
+                <h3>3. Upload</h3>
+                <div class="row">
+                    <button class="primary" :class="{danger: upload.armed}" @click="confirmUpload()" :disabled="!canUpload">
+                        {{ upload.armed ? 'Sure? This changes the live site' : 'Upload to production' }}
+                    </button>
+                    <span v-if="!canUpload && !uploadRunning" class="muted">{{ uploadDone ? '' : 'Run the check first' }}</span>
+                </div>
+                <div v-if="uploadDone && uploadJob.status === 'done'" class="ok-line">
+                    ✓ Uploaded: {{ uploadJob.data.upload.length }} files sent, {{ uploadJob.data.delete.length }} deleted on the host
+                </div>
+                <div v-if="uploadDone && uploadJob.status === 'failed'" class="error">The upload failed: {{ uploadJob.error }}. See the log in Jobs.</div>
+            </template>
+        </section>
+    </div>
+
+    <section class="jobs" :class="{open: jobsOpen}" v-if="jobs.length">
+        <header @click="jobsOpen = !jobsOpen">
+            <span class="dot" :class="activeJobs.length ? 'spin no_text' : 'done'"></span>
+            <b>Jobs</b>
+            <span class="muted">{{ jobsSummary }}</span>
+            <span v-if="fakeAi" class="badge no_text" title="EDITOR_FAKE_AI is set: no Whisper, no LLM">fake AI</span>
+            <span class="grow"></span>
+            <span>{{ jobsOpen ? '▾' : '▴' }}</span>
+        </header>
+        <div v-if="jobsOpen" class="jobs-body">
+            <ul>
+                <li v-for="j in jobsNewestFirst" :key="j.id" :class="[j.status, {selected: j.id === logJobId}]" @click="logJobId = j.id">
+                    <span class="job-status">{{ j.status }}</span>
+                    <span class="job-kind">{{ j.kind }}</span>
+                    <span class="file-name">{{ j.name || j.code }}</span>
+                    <progress v-if="j.status === 'running' && j.progress" :value="j.progress[0]" :max="j.progress[1]"></progress>
+                    <span v-if="j.status === 'running' && j.progress" class="muted">{{ j.progress[0] }}/{{ j.progress[1] }}</span>
+                    <span v-if="j.then.length && j.status !== 'failed'" class="muted">→ {{ j.then.join(' → ') }}</span>
+                    <button v-if="j.status === 'queued'" @click.stop="cancelJob(j.id)">Cancel</button>
+                </li>
+            </ul>
+            <pre ref="logEl">{{ logText }}</pre>
+        </div>
+    </section>
 </div>
 <script type="module" src="app.js"></script>
 </body>

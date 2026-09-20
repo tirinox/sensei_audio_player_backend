@@ -28,7 +28,7 @@ abstractions, frameworks, or defensive layers the code doesn't already have.
 | `core/config.py` | `AUDIO_SOURCE_PATH` (from `.env`, made absolute), `NORMALIZE_TO_DBFS`. |
 | `core/file_man.py` | MP3 discovery, course-code selection, filename cleanup, `lb_` check. |
 | `core/audio_utils.py` | Load audio, ffprobe length/bitrate, safe normalization, low-bitrate convert. |
-| `core/splitter.py` | Silence-based phrase detection → `(start_ms, end_ms)` list; whole file or only a range (`detect_pieces_in_range`). |
+| `core/splitter.py` | Silence-based phrase detection → `(start_ms, end_ms)` list; whole file or only a range (`detect_pieces_in_range`). `detect_silence` here is a numpy re-implementation of pydub's with identical output (tested), ~100× faster. Also `pick_cut` (where to cut a segment) and `suggest_min_silence_len`. |
 | `core/speech.py` | `SpeechRecognitionWhisper` (in use) and `SpeechRecognitionGoogle` (legacy). |
 | `core/process_segments.py` | `fill_text_for()` — transcribes segments lacking text, saves after each. |
 | `core/segment_man.py` | `SegmentManager` — load/save/edit `<file>.mp3_segments.json` (texts, join, split, bounds, delete). |
@@ -38,7 +38,7 @@ abstractions, frameworks, or defensive layers the code doesn't already have.
 | `core/furigana.py` | Legacy MeCab/pykakasi furigana + ruby ⇄ `[漢字](かんじ)` converters. |
 | `core/tui.py` | `run_menu()` — curses picker with type-to-filter and optional timeout. |
 | `core/player.py`, `core/waveform.py` | Segment playback demo, waveform PNG rendering. |
-| `editor/` | New web editor (work in progress, replaces the Streamlit UI): `server.py` — FastAPI app (JSON API, MP3 with Range, static files), `library.py` — scans codes/files and computes per-file processing status, `static/` — no-build frontend (Vue 3 + wavesurfer.js as ES modules from jsDelivr, so it needs internet). Edits (text, join, cut, delete) are POSTed per segment together with the segment's `start`/`end` (409 if the file changed meanwhile), saved at once, and the previous version goes to `core/backup.py` first (Undo/History in the UI). Cutting picks the place with `splitter.pick_cut`: the longest pause inside the segment, or the pause under the cursor. No pipeline jobs yet. |
+| `editor/` | Web editor (replaces the Streamlit UI). `server.py` — FastAPI app: JSON API, MP3 with Range, static files, SSE at `/api/events`. `library.py` — scans codes/files, computes per-file status (`incoming` → `unsplit` → `no_text` → `no_furigana` → `done`, `index_stale`). `jobs.py` — one worker thread + queue for slow steps; its `print()` output becomes the job log; a file with a queued/running job is read-only (HTTP 423). `pipeline.py` — job handlers: `convert` (original is moved to `BACKUP_PATH/originals/<CODE>/`, not deleted), `split`, `transcribe`, `furigana` (only segments without `original_text`), `furigana_segment`, `reindex`, and the global `upload_dry` (reindexes stale codes, then `scripts/upload.sh --dry-run`, parses what rsync would send/delete) and `upload` (accepted only right after a successful dry run, with no stale index and no other active jobs; refused when the editor's `AUDIO_SOURCE_PATH` differs from the one in `.env`, because `upload.sh` reads `.env` itself); jobs can be chained with `then`. `static/` — no-build frontend (Vue 3 + wavesurfer.js as ES modules from jsDelivr, so it needs internet). Edits (text, join, cut, delete, re-split of a file or of one segment with a preview) are done right in the request, carry the segment's `start`/`end` (409 if the file changed meanwhile), are saved at once, and the previous version goes to `core/backup.py` first (Undo/History in the UI). |
 | `webui.py`, `ui/` | Legacy Streamlit UI (to be removed once the editor covers it): segment editor (edit text, join segments) + "make upload" button. |
 | `scripts/upload.sh` | `sshpass` + `rsync --delete` of the audio DB to the host; `--dry-run` only lists the changes. |
 | `tests/` | `pytest` tests for the pure logic (segments, splitter, backups). |
@@ -145,7 +145,11 @@ New pure logic should come with tests in `tests/`.
 
 **Trying the editor.** `.claude/launch.json` starts it against `temp/editor_db` — a small git-ignored copy of a few
 files from the real DB (create it by copying a couple of `lb_*.mp3` + their `_segments.json` into
-`temp/editor_db/<CODE>/`); its backups go to `temp/editor_backups`. Never point a dev server you are experimenting with at the real `audio_db/`.
+`temp/editor_db/<CODE>/`); its backups go to `temp/editor_backups`.
+That launch config also sets `EDITOR_FAKE_AI=1`: transcribe/furigana jobs use placeholders instead of Whisper and the LLM,
+so the whole job flow can be exercised for free. Never set it for real work.
+It sets `EDITOR_UPLOAD_CMD=tests/bin/fake_upload.sh` as well: the upload wizard then runs that harmless script
+instead of `scripts/upload.sh` (which always uploads the real DB from `.env`, whatever the editor looks at). Never point a dev server you are experimenting with at the real `audio_db/`.
 
 **Code style.** Follow what is there: plain functions and small classes, `print()` for progress
 (no logging framework), `tqdm` for loops, f-strings, `os.path` for paths, JSON written with

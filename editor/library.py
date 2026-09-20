@@ -97,3 +97,15 @@ def file_details(source_path, code, name):
     status["code"] = code
     status["segments"] = seg.segments
     return status
+
+
+def upload_report(source_path):
+    """Per code: what is not finished yet. Everything in the audio DB goes to the host, finished or not"""
+    report = []
+    for code in list_codes(source_path):
+        files = list_files(source_path, code)
+        entry = {"code": code, "n_files": len(files), "stale": sum(1 for f in files if f["index_stale"])}
+        for stage in ("incoming", "unsplit", "no_text", "no_furigana"):
+            entry[stage] = [f["name"] for f in files if f["stage"] == stage]
+        report.append(entry)
+    return report

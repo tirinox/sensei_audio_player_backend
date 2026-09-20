@@ -1,8 +1,11 @@
+import pytest
 from pydub import AudioSegment
-from pydub.generators import Sine
+from pydub.generators import Sine, WhiteNoise
+from pydub.silence import detect_silence as pydub_detect_silence
 
 from core.segment_man import SegmentManager
-from core.splitter import detect_pieces, detect_pieces_in_range, find_pauses, pick_cut, split_file, split_params
+from core.splitter import detect_pieces, detect_pieces_in_range, detect_silence, find_pauses, pick_cut, split_file, \
+    split_params, suggest_min_silence_len
 
 
 def tone(ms):
@@ -102,3 +105,33 @@ def test_pick_cut_at_cursor():
     # the cursor is in the middle of speech: cut exactly there
     assert pick_cut(audio, 400, 4600, at_ms=2200, padding=200) == (2200, 2200)
     assert pick_cut(tone(2000), 0, 2000, at_ms=900) == (900, 900)
+
+
+def noise(ms, volume):
+    return WhiteNoise().to_audio_segment(duration=ms, volume=volume)
+
+
+@pytest.mark.parametrize("frame_rate, channels", [(44100, 1), (22050, 2), (48000, 1)])
+def test_fast_detect_silence_equals_pydub(frame_rate, channels):
+    audio = (silence(700) + tone(900) + noise(450, -50) + tone(300) + noise(60, -20) + silence(1300)
+             + noise(900, -38) + tone(1111) + silence(333) + tone(205) + silence(1207))
+    audio = audio.set_frame_rate(frame_rate).set_channels(channels)
+    for min_silence_len in (100, 333, 800, 1000):
+        for silence_thresh in (-50, -40, -30):
+            expected = pydub_detect_silence(audio, min_silence_len, silence_thresh)
+            assert detect_silence(audio, min_silence_len, silence_thresh) == expected, (min_silence_len, silence_thresh)
+    assert detect_silence(silence(100), 500, -40) == []
+    assert detect_silence(tone(1000), 500, -40) == []
+
+
+def test_suggest_min_silence_len():
+    # pauses inside phrases are 150-300 ms, between phrases 900-1400 ms
+    audio = silence(500)
+    for inner, outer in [(150, 900), (300, 1400), (200, 1000), (250, 1200)]:
+        audio += tone(700) + silence(inner) + tone(700) + silence(outer)
+    suggestion, lengths = suggest_min_silence_len(audio)
+    assert len(lengths) == 7  # the last silence touches the end
+    assert 300 < suggestion < 900
+    assert len(detect_pieces(audio, padding=100, min_silence_len=suggestion, silence_thresh=-40)) == 4
+
+    assert suggest_min_silence_len(tone(3000))[0] is None
