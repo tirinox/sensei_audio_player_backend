@@ -37,7 +37,19 @@ What to fix:
    counters 一つ…九つ, 一人, 二人.
 
 4. Punctuation, for comfortable reading, following the meaning and the rhythm of speech.
-   - 、 between clauses and after long topics / conjunctions, not after every word.
+   - 、 between clauses and after long topics, not after every word.
+   - Put 、 after a conjunction or a sentence adverb that opens a sentence or a clause, whenever it is followed by
+     more text: でも、 しかし、 だが、 けれども、 ところが、 それでも、 もちろん、 だから、 ですから、 それで、 そこで、
+     そして、 それから、 それに、 また、 さらに、 しかも、 すると、 つまり、 たとえば、 実は、 ところで、 さて、 では、
+     一方、 ただ、 ただし、 なお、 やはり、 確かに、 まず、 次に、 最後に、 and similar words.
+     Examples: でも明るい色より暗い色の方が好きです。 → でも、明るい色より暗い色の方が好きです。
+     もちろん危険だけではありません。 → もちろん、危険だけではありません。
+     This rule is not a matter of style: add the comma even if the rest of the line needs no changes.
+     In the middle of a sentence, after a topic, the comma goes BEFORE such a word, not after it:
+     赤のイメージはもちろん危険だけではありません。 → 赤のイメージは、もちろん危険だけではありません。
+     (〜はもちろん、 would read as the pattern "not to mention ~" and change the meaning.)
+     Do not add it when the word is not used as a conjunction (また会いましょう, まず第一に are fine as they are),
+     or when the word is the whole line.
    - Every line that is a sentence or a phrase must END with a punctuation mark: 。 or ？ or ！ (or 」 if it closes a quote).
      Questions end with ？ when it helps reading, plain か。 is fine too.
    - Quoted speech, titles and words under discussion in 「」.
