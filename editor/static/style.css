@@ -146,4 +146,27 @@ main { display: flex; flex-direction: column; min-width: 0; min-height: 0; paddi
 .seg-text rt { font-size: 10px; color: var(--muted); user-select: none; }
 .seg-text.muted { font-size: 14px; font-style: italic; }
 .seg-original { color: var(--muted); font-size: 12px; }
-.seg-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.seg-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; cursor: default; }
+.seg-meta { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.seg-actions { display: flex; gap: 4px; opacity: .55; }
+.segment:hover .seg-actions, .segment.active .seg-actions, .segment.editing .seg-actions { opacity: 1; }
+.seg-actions button { font-size: 12px; padding: 2px 8px; }
+button.danger { background: var(--unsplit); border-color: var(--unsplit); color: #fff; }
+button.on { border-color: var(--accent); }
+
+.segment.editing { cursor: default; border-color: var(--no_furigana); }
+.seg-body input { width: 100%; margin-top: 4px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+.seg-body input:focus { outline: none; border-color: var(--no_furigana); }
+.edit-text { font-size: 16px; font-family: "Hiragino Sans", "Yu Gothic", "Noto Sans JP", sans-serif; }
+.edit-original { font-size: 13px; }
+.edit-actions { margin-top: 6px; }
+.edit-actions button { padding: 3px 10px; font-size: 12px; min-width: 0; }
+.hint { font-size: 12px; color: var(--no_text); margin-top: 3px; }
+.hint a { color: inherit; }
+
+.history { position: relative; display: flex; gap: 4px; margin-left: auto; }
+.history button { font-size: 12px; padding: 3px 10px; }
+.popover { position: absolute; top: calc(100% + 6px); right: 0; z-index: 10; width: 420px; max-height: 360px; overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; box-shadow: 0 8px 24px #0003; display: flex; flex-direction: column; gap: 2px; }
+.backup { display: flex; align-items: center; gap: 10px; font-size: 12px; padding: 3px 4px; border-radius: 4px; font-variant-numeric: tabular-nums; }
+.backup:hover { background: var(--bg); }
+.backup button { padding: 1px 8px; font-size: 12px; }

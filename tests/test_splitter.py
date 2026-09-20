@@ -2,7 +2,7 @@ from pydub import AudioSegment
 from pydub.generators import Sine
 
 from core.segment_man import SegmentManager
-from core.splitter import detect_pieces, detect_pieces_in_range, split_file, split_params
+from core.splitter import detect_pieces, detect_pieces_in_range, find_pauses, pick_cut, split_file, split_params
 
 
 def tone(ms):
@@ -74,3 +74,31 @@ def test_split_file_resets_segments(tmp_path):
     split_file(audio, metadata, **PARAMS)
     assert len(metadata.segments) == 1
     assert metadata.segments[0]['text'] == ''
+
+
+def test_find_pauses_longest_first():
+    audio = tone(1000) + silence(300) + tone(1000) + silence(600) + tone(1000) + silence(500)
+    pauses = find_pauses(audio, 0, len(audio))
+    approx(pauses, [(2300, 2900), (1000, 1300)])  # the trailing silence touches the edge, so it is not a pause
+
+
+def test_pick_cut_auto():
+    audio = silence(500) + tone(1000) + silence(300) + tone(1000) + silence(700) + tone(1000) + silence(500)
+    first_end, second_start = pick_cut(audio, 400, 4600, padding=200)
+    assert abs(first_end - 3000) <= 30 and abs(second_start - 3300) <= 30
+
+    # a pause shorter than two paddings is cut in the middle
+    first_end, second_start = pick_cut(audio, 400, 2700, padding=200)
+    assert first_end == second_start and abs(first_end - 1650) <= 30
+
+    assert pick_cut(tone(2000), 0, 2000) is None
+
+
+def test_pick_cut_at_cursor():
+    audio = silence(500) + tone(1000) + silence(300) + tone(1000) + silence(700) + tone(1000) + silence(500)
+    # the cursor is in (or right next to) a pause: snap to it
+    first_end, second_start = pick_cut(audio, 400, 4600, at_ms=2900, padding=200)
+    assert abs(first_end - 3000) <= 30 and abs(second_start - 3300) <= 30
+    # the cursor is in the middle of speech: cut exactly there
+    assert pick_cut(audio, 400, 4600, at_ms=2200, padding=200) == (2200, 2200)
+    assert pick_cut(tone(2000), 0, 2000, at_ms=900) == (900, 900)

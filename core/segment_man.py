@@ -180,16 +180,18 @@ class SegmentManager:
         del self.segments[id2]
         self.sort()
 
-    def split_segment(self, i, at_ms):
+    def split_segment(self, i, at_ms, resume_ms=None):
+        """Cut a segment in two: [start, at_ms] and [resume_ms, end]; resume_ms > at_ms drops the pause between"""
         self._check_index(i)
         seg = self.segments[i]
         at_ms = int(at_ms)
-        if not seg['start'] < at_ms < seg['end']:
+        resume_ms = at_ms if resume_ms is None else int(resume_ms)
+        if not seg['start'] < at_ms <= resume_ms < seg['end']:
             raise ValueError("Split point must be inside the segment")
 
         # the texts stay in the first half; the second one is left for transcription
         second = {
-            "start": at_ms,
+            "start": resume_ms,
             "end": seg['end'],
             "text": "",
         }

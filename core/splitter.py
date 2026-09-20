@@ -57,6 +57,50 @@ def detect_pieces_in_range(audio, start, end, **kwargs):
     return [(piece_start + start, piece_end + start) for piece_start, piece_end in pieces]
 
 
+def find_pauses(audio, start, end, min_pause=120, silence_thresh=-40):
+    """Silent intervals strictly inside audio[start:end] (not touching its edges), absolute ms, longest first"""
+    piece = audio[start:end]
+    silences = detect_silence(piece, min_silence_len=min_pause, silence_thresh=silence_thresh, seek_step=5)
+    pauses = [(s + start, e + start) for s, e in silences if s > 0 and e < len(piece)]
+    pauses.sort(key=lambda pause: pause[0] - pause[1])
+    return pauses
+
+
+def find_pauses_relaxed(audio, start, end, min_pause=120, silence_thresh=-40):
+    """Same, but if nothing is that quiet (noisy recording), raise the threshold step by step"""
+    for thresh in (silence_thresh, silence_thresh + 6, silence_thresh + 12):
+        pauses = find_pauses(audio, start, end, min_pause=min_pause, silence_thresh=thresh)
+        if pauses:
+            return pauses
+    return []
+
+
+def cut_around_pause(pause, padding=200):
+    """Where the first part ends and the second one starts, if a segment is cut at this pause"""
+    pause_start, pause_end = pause
+    first_end = pause_start + padding
+    second_start = pause_end - padding
+    if first_end > second_start:
+        first_end = second_start = (pause_start + pause_end) // 2
+    return first_end, second_start
+
+
+def pick_cut(audio, start, end, at_ms=None, padding=200, silence_thresh=-40, snap_ms=150):
+    """
+    Choose where to cut the segment [start, end].
+    No at_ms: at the longest pause inside. With at_ms: at the pause under it (or within snap_ms),
+    otherwise exactly there. Returns (first_end, second_start) or None if there is no pause to cut at.
+    """
+    pauses = find_pauses_relaxed(audio, start, end, silence_thresh=silence_thresh)
+    if at_ms is None:
+        return cut_around_pause(pauses[0], padding) if pauses else None
+
+    for pause_start, pause_end in pauses:
+        if pause_start - snap_ms <= at_ms <= pause_end + snap_ms:
+            return cut_around_pause((pause_start, pause_end), padding)
+    return at_ms, at_ms
+
+
 def split_params(min_silence_len=None, padding=None, silence_thresh=None):
     """Fill the missing splitter parameters from the environment"""
     if min_silence_len is None:

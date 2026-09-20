@@ -119,6 +119,15 @@ def test_split_segment(tmp_path):
             seg.split_segment(0, bad)
 
 
+def test_split_segment_drops_the_pause(tmp_path):
+    seg = make_seg(tmp_path, [plain(0, 3000, 'あ')])
+    seg.split_segment(0, 1200, 1700)
+    assert seg.segments == [plain(0, 1200, 'あ'), plain(1700, 3000, '')]
+    for at_ms, resume_ms in [(1000, 900), (1000, 1200), (500, 1200)]:
+        with pytest.raises(ValueError):
+            seg.split_segment(0, at_ms, resume_ms)
+
+
 def test_set_bounds(tmp_path):
     seg = make_seg(tmp_path, [plain(0, 1000, 'あ'), plain(1200, 2000, 'い'), plain(2500, 3000, 'う')])
     seg.set_bounds(1, 1000, 2500)  # touching the neighbours is fine

@@ -2,7 +2,7 @@ import os
 
 import pytest
 
-from core.backup import backup_dir_for, list_backups, make_backup, restore_backup
+from core.backup import backup_dir_for, list_backups, make_backup, parse_backup_name, restore_backup
 
 
 @pytest.fixture
@@ -67,3 +67,23 @@ def test_rejects_bad_names_and_paths(roots, tmp_path):
         restore_backup(mp3, '../../../etc/passwd', **roots)
     with pytest.raises(ValueError):
         make_backup(str(tmp_path / 'outside.mp3'), **roots)
+
+
+def test_labels_and_min_interval(roots):
+    mp3 = os.path.join(roots['source_root'], 'JPTEST', 'lb_a.mp3')
+    segments_file = mp3 + '_segments.json'
+
+    write(segments_file, 'v1')
+    first = make_backup(mp3, label='text', min_interval=300, **roots)
+    assert first.endswith('_text.json')
+    assert parse_backup_name(first)[1] == 'text'
+
+    write(segments_file, 'v2')
+    assert make_backup(mp3, label='text', min_interval=300, **roots) is None  # same series of text edits
+
+    join = make_backup(mp3, label='join', min_interval=300, **roots)  # another kind of change is never skipped
+    assert join
+
+    write(segments_file, 'v3')
+    assert make_backup(mp3, label='text', min_interval=300, **roots)  # the latest one is not a text backup
+    assert len(list_backups(mp3, **roots)) == 3

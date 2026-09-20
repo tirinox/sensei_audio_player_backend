@@ -4,7 +4,7 @@
     {
       "name": "editor-testdb",
       "runtimeExecutable": "env",
-      "runtimeArgs": ["AUDIO_SOURCE_PATH=temp/editor_db", "uv", "run", "uvicorn", "editor.server:app", "--host", "127.0.0.1", "--port", "8377"],
+      "runtimeArgs": ["AUDIO_SOURCE_PATH=temp/editor_db", "BACKUP_PATH=temp/editor_backups", "uv", "run", "uvicorn", "editor.server:app", "--host", "127.0.0.1", "--port", "8377"],
       "port": 8377
     }
   ]

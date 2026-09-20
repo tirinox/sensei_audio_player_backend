@@ -38,7 +38,7 @@ abstractions, frameworks, or defensive layers the code doesn't already have.
 | `core/furigana.py` | Legacy MeCab/pykakasi furigana + ruby ⇄ `[漢字](かんじ)` converters. |
 | `core/tui.py` | `run_menu()` — curses picker with type-to-filter and optional timeout. |
 | `core/player.py`, `core/waveform.py` | Segment playback demo, waveform PNG rendering. |
-| `editor/` | New web editor (work in progress, replaces the Streamlit UI): `server.py` — FastAPI app (JSON API, MP3 with Range, static files), `library.py` — scans codes/files and computes per-file processing status, `static/` — no-build frontend (Vue 3 + wavesurfer.js as ES modules from jsDelivr, so it needs internet). Read-only for now. |
+| `editor/` | New web editor (work in progress, replaces the Streamlit UI): `server.py` — FastAPI app (JSON API, MP3 with Range, static files), `library.py` — scans codes/files and computes per-file processing status, `static/` — no-build frontend (Vue 3 + wavesurfer.js as ES modules from jsDelivr, so it needs internet). Edits (text, join, cut, delete) are POSTed per segment together with the segment's `start`/`end` (409 if the file changed meanwhile), saved at once, and the previous version goes to `core/backup.py` first (Undo/History in the UI). Cutting picks the place with `splitter.pick_cut`: the longest pause inside the segment, or the pause under the cursor. No pipeline jobs yet. |
 | `webui.py`, `ui/` | Legacy Streamlit UI (to be removed once the editor covers it): segment editor (edit text, join segments) + "make upload" button. |
 | `scripts/upload.sh` | `sshpass` + `rsync --delete` of the audio DB to the host; `--dry-run` only lists the changes. |
 | `tests/` | `pytest` tests for the pure logic (segments, splitter, backups). |
@@ -145,7 +145,7 @@ New pure logic should come with tests in `tests/`.
 
 **Trying the editor.** `.claude/launch.json` starts it against `temp/editor_db` — a small git-ignored copy of a few
 files from the real DB (create it by copying a couple of `lb_*.mp3` + their `_segments.json` into
-`temp/editor_db/<CODE>/`). Never point a dev server you are experimenting with at the real `audio_db/`.
+`temp/editor_db/<CODE>/`); its backups go to `temp/editor_backups`. Never point a dev server you are experimenting with at the real `audio_db/`.
 
 **Code style.** Follow what is there: plain functions and small classes, `print()` for progress
 (no logging framework), `tqdm` for loops, f-strings, `os.path` for paths, JSON written with
