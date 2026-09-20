@@ -91,14 +91,14 @@
                     <button @click="openSplit(-1)" :disabled="locked" :class="{on: split.open && split.index < 0}">Split…</button>
                     <button @click="submitJob('transcribe')" :disabled="locked || current.n_text >= current.n_segments"
                             title="Whisper for the segments without text">Transcribe · {{ current.n_segments - current.n_text }} empty</button>
-                    <button @click="submitJob('correct', current.name, {}, current.n_furigana ? ['furigana'] : [])" :disabled="locked || !uncorrectedCount"
-                            title="LLM fixes recognition errors: wrong homophones, kana/kanji, numbers, punctuation. Changed segments lose their furigana, so it is redone after that if the file had any">Correct · {{ uncorrectedCount }} unchecked</button>
+                    <button @click="submitJob('correct', current.name, {all: !uncorrectedCount}, current.n_furigana ? ['furigana'] : [])" :disabled="locked || !current.n_text"
+                            title="LLM fixes recognition errors: wrong homophones, kana/kanji, numbers, punctuation. If a word is changed, the segment loses its furigana, so furigana is redone after that if the file had any. When everything is checked already, all segments are checked again">{{ uncorrectedCount ? `Correct · ${uncorrectedCount} unchecked` : 'Correct again · all' }}</button>
                     <button @click="submitJob('furigana')" :disabled="locked || !plainCount"
                             title="LLM furigana for the segments that have text but no furigana">Furigana · {{ plainCount }} plain</button>
                     <button v-if="!current.n_segments" class="primary" @click="submitJob('split', current.name, {}, ['transcribe', 'correct', 'furigana'])"
                             :disabled="locked" title="Split with the default parameters, transcribe, correct and furiganate">Process fully</button>
                 </template>
-                <span v-if="current.busy" class="busy-note"><span class="dot spin no_text"></span> a job is queued or running for this file, editing is locked</span>
+                <span v-if="current.busy || busy" class="busy-note"><span class="spinner"></span>{{ currentJobText }}</span>
             </section>
 
             <section v-if="split.open" class="split-panel">
@@ -152,7 +152,7 @@
                     {{ current.processed ? 'The file is not split into phrases yet' : 'Incoming file: it is not converted yet' }}
                 </div>
                 <article v-for="(s, i) in current.segments" :key="i" class="segment"
-                         :class="{active: i === activeIndex, 'no-text': !s.text, editing: i === editIndex}"
+                         :class="{active: i === activeIndex, 'no-text': !s.text, editing: i === editIndex, working: segmentWork.has(i)}"
                          :ref="el => segmentEls[i] = el" @click="i !== editIndex && playSegment(i)">
                     <div class="seg-num">{{ i + 1 }}</div>
 
@@ -184,21 +184,23 @@
                             <span class="muted">AI fix:</span> <span v-html="diffHtml(s.raw_text, plainText(s))"></span>
                             <a href="#" @click.prevent="revertCorrection(i)" v-if="!locked" title="Back to the text before the correction">revert</a>
                         </div>
+                        <div v-if="noteFor(s)" class="seg-note" :class="noteFor(s).type">{{ noteFor(s).text }}</div>
                     </div>
 
                     <div class="seg-side" @click.stop>
                         <div class="seg-meta">
                             <span>{{ fmtTime(s.start / 1000, true) }} – {{ fmtTime(s.end / 1000, true) }} · {{ ((s.end - s.start) / 1000).toFixed(1) }} s</span>
-                            <span v-if="s.raw_text !== undefined" class="muted" title="Checked by the AI correction">✓ checked</span>
+                            <span v-if="segmentWork.has(i)" class="working-badge"><span class="spinner"></span>{{ segmentWork.get(i) }}</span>
+                            <span v-else-if="s.raw_text !== undefined" class="muted" title="Checked by the AI correction">✓ checked</span>
                             <span class="badge" :class="s.original_text !== undefined ? 'done' : (s.text ? 'no_furigana' : 'no_text')">
                                 {{ s.original_text !== undefined ? 'furigana' : (s.text ? 'plain' : 'empty') }}
                             </span>
                         </div>
                         <div class="seg-actions">
                             <button @click="startEdit(i)" :disabled="locked" title="Edit the text (double click)">✎</button>
-                            <button @click="submitJob('correct_segment', current.name, {i, start: s.start, end: s.end})" :disabled="locked || !s.text"
+                            <button @click="submitSegmentJob('correct_segment', i)" :disabled="locked || !s.text || segmentWork.has(i)"
                                     title="AI correction of this segment (LLM), with the neighbours as the context">✦</button>
-                            <button @click="submitJob('furigana_segment', current.name, {i, start: s.start, end: s.end})" :disabled="locked || !s.text"
+                            <button @click="submitSegmentJob('furigana_segment', i)" :disabled="locked || !s.text || segmentWork.has(i)"
                                     title="Make furigana for this segment again (LLM), from its plain text">ふ</button>
                             <button @click="cut(i, false)" :disabled="locked" title="Cut at the longest pause inside">✂ auto</button>
                             <button @click="openSplit(i)" :disabled="locked" :class="{on: split.open && split.index === i}"
@@ -243,10 +245,16 @@
 
                 <h3>2. Check what will change</h3>
                 <div class="row">
-                    <button @click="submitUpload('upload_dry')" :disabled="uploadRunning || !!upload.preflight.blocker">
-                        {{ staleCodes.length ? `Reindex ${staleCodes.join(', ')} and dry run` : 'Dry run' }}
+                    <button @click="submitUpload('upload_dry')" :disabled="uploadRunning || !!upload.preflight.blocker"
+                            :class="{running: uploadRunning && !(uploadJob && uploadJob.kind === 'upload' && !upload.submitting)}">
+                        <template v-if="uploadRunning && !(uploadJob && uploadJob.kind === 'upload' && !upload.submitting)"><span class="spinner"></span>Checking…</template>
+                        <template v-else>{{ staleCodes.length ? `Reindex ${staleCodes.join(', ')} and dry run` : 'Dry run' }}</template>
                     </button>
-                    <span v-if="uploadRunning" class="busy-note"><span class="dot spin no_text"></span> {{ uploadJob.kind === 'upload' ? 'uploading' : 'checking' }}… {{ uploadTail }}</span>
+                </div>
+                <div v-if="uploadRunning" class="upload-progress">
+                    <progress v-if="uploadJob && uploadJob.progress" :value="uploadJob.progress[0]" :max="uploadJob.progress[1]"></progress>
+                    <progress v-else></progress>
+                    <div class="upload-status">{{ uploadStatus }}</div>
                 </div>
                 <template v-if="dryRun">
                     <div v-if="dryRun.status === 'failed'" class="error">The dry run failed: {{ dryRun.error }}</div>
@@ -266,8 +274,10 @@
 
                 <h3>3. Upload</h3>
                 <div class="row">
-                    <button class="primary" :class="{danger: upload.armed}" @click="confirmUpload()" :disabled="!canUpload">
-                        {{ upload.armed ? 'Sure? This changes the live site' : 'Upload to production' }}
+                    <button class="primary" :class="{danger: upload.armed, running: uploadRunning && uploadJob && uploadJob.kind === 'upload'}"
+                            @click="confirmUpload()" :disabled="!canUpload || uploadRunning">
+                        <template v-if="uploadRunning && uploadJob && uploadJob.kind === 'upload'"><span class="spinner light"></span>Uploading…</template>
+                        <template v-else>{{ upload.armed ? 'Sure? This changes the live site' : 'Upload to production' }}</template>
                     </button>
                     <span v-if="!canUpload && !uploadRunning" class="muted">{{ uploadDone ? '' : 'Run the check first' }}</span>
                 </div>
@@ -284,6 +294,7 @@
             <span class="dot" :class="activeJobs.length ? 'spin no_text' : 'done'"></span>
             <b>Jobs</b>
             <span class="muted">{{ jobsSummary }}</span>
+            <span v-if="eventsDown" class="badge unsplit" title="The live connection to the server is lost; the state is polled every 3 seconds">offline</span>
             <span v-if="fakeAi" class="badge no_text" title="EDITOR_FAKE_AI is set: no Whisper, no LLM">fake AI</span>
             <span class="grow"></span>
             <span>{{ jobsOpen ? '▾' : '▴' }}</span>
@@ -297,6 +308,7 @@
                     <progress v-if="j.status === 'running' && j.progress" :value="j.progress[0]" :max="j.progress[1]"></progress>
                     <span v-if="j.status === 'running' && j.progress" class="muted">{{ j.progress[0] }}/{{ j.progress[1] }}</span>
                     <span v-if="j.then.length && j.status !== 'failed'" class="muted">→ {{ j.then.join(' → ') }}</span>
+                    <span v-if="j.data && j.data.checked !== undefined" class="muted">checked {{ j.data.checked }}, changed {{ j.data.changed }}</span>
                     <button v-if="j.status === 'queued'" @click.stop="cancelJob(j.id)">Cancel</button>
                 </li>
             </ul>

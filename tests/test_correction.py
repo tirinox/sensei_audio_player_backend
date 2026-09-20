@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 from core.correction_neural import CorrectionNeural, correct_segments
@@ -17,7 +19,7 @@ class ScriptedCorrector(CorrectionNeural):
         self.requests.append(prompt)
         if self.answer is not None:
             return self.answer
-        lines = prompt.split('Lines to correct:\n')[1].splitlines()
+        lines = [line for line in prompt.split('Lines to correct:\n')[1].splitlines() if re.match(r'\d+\. ', line)]
         for old, new in self.replacements.items():
             lines = [line.replace(old, new) for line in lines]
         return '\n'.join(lines)
@@ -61,6 +63,7 @@ def test_correct_one_uses_neighbours():
     assert corrector.correct_one(sentences, 5, window=2) == '5を描く。'
     assert '1. 3を書く。' in corrector.requests[0] and '5. 7を書く。' in corrector.requests[0]
     assert '8を書く' not in corrector.requests[0]
+    assert 'error in line 3 ' in corrector.requests[0]  # the suspected line is pointed out
     assert corrector.correct_one(sentences, 0, window=2) == '0を描く。'
 
 

@@ -135,7 +135,10 @@ createApp({
         const logJobId = ref(null)
         const logEl = ref(null)
         const fakeAi = ref(false)
-        const upload = reactive({open: false, preflight: null, armed: false})
+        const clicked = reactive(new Set())  // segment jobs sent to the server but not confirmed by an event yet
+        const segmentNotes = reactive({})  // result of the last AI job of a segment, until the page is reloaded
+        const upload = reactive({open: false, preflight: null, armed: false, submitting: false})
+        const eventsDown = ref(false)  // the live connection to the server is lost; polling takes over
         const splitDefaults = ref({min_silence_len: 800, padding: 200, silence_thresh: -40})
         // index < 0: the whole file, otherwise only that segment; pieces: the preview drawn on the wave
         const split = reactive({open: false, index: -1, min_silence_len: 800, padding: 200, silence_thresh: -40, pieces: null, note: ''})
@@ -168,6 +171,15 @@ createApp({
         const canApplySplit = computed(() => split.pieces && split.pieces.length >= (split.index < 0 ? 1 : 2))
 
         const activeJobs = computed(() => jobs.value.filter(isActive))
+        // what is going on with the open file, for the note next to the pipeline buttons
+        const currentJobText = computed(() => {
+            const file = current.value
+            const job = file && jobs.value.find(j => isActive(j) && (!j.code || (j.code === file.code && (!j.name || j.name === file.name))))
+            if (!job) return 'working…'
+            const progress = job.status === 'running' && job.progress ? ` ${job.progress[0]}/${job.progress[1]}` : ''
+            const next = job.then.length ? `, then ${job.then.join(', ')}` : ''
+            return `${job.kind} is ${job.status}${progress}${next}; editing is locked`
+        })
         const jobsNewestFirst = computed(() => [...jobs.value].reverse())
         const jobsSummary = computed(() => {
             const running = jobs.value.filter(j => j.status === 'running').length
@@ -188,7 +200,13 @@ createApp({
         const WARNING_LABELS = {incoming: 'incoming', unsplit: 'not split', no_text: 'no text', no_furigana: 'no furigana'}
 
         const uploadJob = computed(() => [...jobs.value].reverse().find(j => UPLOAD_KINDS.includes(j.kind)) || null)
-        const uploadRunning = computed(() => !!uploadJob.value && isActive(uploadJob.value))
+        const uploadRunning = computed(() => upload.submitting || (!!uploadJob.value && isActive(uploadJob.value)))
+        const uploadStatus = computed(() => {
+            const job = uploadJob.value
+            if (upload.submitting || !job || !isActive(job)) return 'Starting…'
+            if (job.status === 'queued') return 'Waiting for other jobs…'
+            return uploadTail.value || (job.kind === 'upload' ? 'Uploading…' : 'Checking…')
+        })
         const uploadDone = computed(() => !!uploadJob.value && uploadJob.value.kind === 'upload' && !isActive(uploadJob.value))
         const dryRun = computed(() => uploadJob.value && uploadJob.value.kind === 'upload_dry' && !isActive(uploadJob.value) ? uploadJob.value : null)
         const canUpload = computed(() => !!dryRun.value && dryRun.value.status === 'done' && !staleCodes.value.length
@@ -217,12 +235,17 @@ createApp({
         }
 
         async function submitUpload(kind) {
+            if (uploadRunning.value) return
             upload.armed = false
+            upload.submitting = true
             try {
-                await api('/api/jobs', 'POST', {kind})
+                // the answer is the job itself: show it at once, without waiting for the event
+                await onJobEvent(await api('/api/jobs', 'POST', {kind}))
             } catch (e) {
                 error.value = e.message
                 upload.open = false
+            } finally {
+                upload.submitting = false
             }
         }
 
@@ -572,11 +595,70 @@ createApp({
 
         // ---- background jobs; their state comes through server-sent events ----
 
-        async function submitJob(kind, name = current.value && current.value.name, params = {}, then = []) {
-            await guarded(async () => {
-                await api('/api/jobs', 'POST', {kind, code: code.value, name, params, then})
-                jobsOpen.value = true
+        const WORK_LABELS = {correct: 'correcting', correct_segment: 'correcting', furigana: 'furigana', furigana_segment: 'furigana', transcribe: 'transcribing'}
+
+        function segmentKey(name, start, end) {
+            return `${name}|${start}|${end}`
+        }
+
+        // which segments of the open file are being processed right now: index -> label
+        const segmentWork = computed(() => {
+            const work = new Map()
+            if (!current.value) return work
+            const segments = current.value.segments
+            for (const job of jobs.value) {
+                if (!isActive(job) || job.code !== current.value.code || job.name !== current.value.name || !WORK_LABELS[job.kind]) continue
+                const label = WORK_LABELS[job.kind] + (job.status === 'queued' ? ' (queued)' : '…')
+                const all = job.params && job.params.all
+                segments.forEach((s, i) => {
+                    const mine =
+                        job.kind.endsWith('_segment') ? job.params.start === s.start && job.params.end === s.end :
+                        job.kind === 'transcribe' ? !s.text :
+                        job.kind === 'correct' ? !!s.text && (all || s.raw_text === undefined) :
+                        !!s.text && (all || s.original_text === undefined)
+                    if (mine && !work.has(i)) work.set(i, label)
+                })
+            }
+            segments.forEach((s, i) => {
+                if (!work.has(i) && clicked.has(segmentKey(current.value.name, s.start, s.end))) work.set(i, 'sending…')
             })
+            return work
+        })
+
+        function submitSegmentJob(kind, i) {
+            const s = current.value.segments[i]
+            const key = segmentKey(current.value.name, s.start, s.end)
+            if (locked.value || clicked.has(key)) return
+            clicked.add(key)
+            delete segmentNotes[key]
+            // the job event takes it from here; the timeout is for the case the request fails
+            setTimeout(() => clicked.delete(key), 3000)
+            return submitJob(kind, current.value.name, {i, start: s.start, end: s.end})
+        }
+
+        function noteSegmentResult(job) {
+            if (job.kind !== 'correct_segment' || isActive(job)) return
+            const key = segmentKey(job.name, job.params.start, job.params.end)
+            if (job.status === 'failed') segmentNotes[key] = {type: 'failed', text: `AI correction failed: ${job.error}`}
+            else if (job.data && !job.data.changed) segmentNotes[key] = {type: 'ok', text: '✓ AI: the phrase is correct, no changes needed'}
+        }
+
+        function noteFor(segment) {
+            return current.value ? segmentNotes[segmentKey(current.value.name, segment.start, segment.end)] : null
+        }
+
+        async function submitJob(kind, name = current.value && current.value.name, params = {}, then = []) {
+            if (busy.value) return
+            busy.value = true
+            try {
+                await guarded(async () => {
+                    const job = await api('/api/jobs', 'POST', {kind, code: code.value, name, params, then})
+                    if (!kind.endsWith('_segment')) jobsOpen.value = true
+                    await onJobEvent(job)  // lock the file at once, without waiting for the event
+                })
+            } finally {
+                busy.value = false
+            }
         }
 
         const cancelJob = id => guarded(() => api(`/api/jobs/${id}/cancel`, 'POST'))
@@ -593,10 +675,13 @@ createApp({
         async function onJobEvent(job) {
             const at = jobs.value.findIndex(j => j.id === job.id)
             const previous = at >= 0 ? jobs.value[at] : null
+            if (previous && !isActive(previous) && isActive(job)) return  // a late copy of an older state
             const merged = {...job, log: previous ? previous.log : []}
             if (previous) jobs.value[at] = merged
             else jobs.value.push(merged)
             if (job.status === 'running' && (!previous || previous.status !== 'running')) logJobId.value = job.id
+            if (job.kind.endsWith('_segment')) clicked.delete(segmentKey(job.name, job.params.start, job.params.end))
+            noteSegmentResult(job)
 
             if (UPLOAD_KINDS.includes(job.kind)) {
                 if (isActive(job)) return reloadCurrent()  // everything is locked while it runs
@@ -618,8 +703,27 @@ createApp({
             }
         }
 
+        // safety net: if the live connection is down, ask for the jobs while something is running
+        async function pollJobs() {
+            if (!eventsDown.value && !activeJobs.value.length) return
+            try {
+                const data = await api('/api/jobs')
+                for (const job of data.jobs) {
+                    const known = jobs.value.find(j => j.id === job.id)
+                    const changed = !known || known.status !== job.status || String(known.progress) !== String(job.progress)
+                    if (known) known.log = job.log
+                    if (changed) await onJobEvent(job)
+                }
+            } catch (e) {
+                // the server is down; the banner says so
+            }
+        }
+
         function connectEvents() {
             const source = new EventSource('/api/events')
+            source.onopen = () => eventsDown.value = false
+            source.onerror = () => eventsDown.value = true
+            setInterval(pollJobs, 3000)
             source.onmessage = message => {
                 const event = JSON.parse(message.data)
                 if (event.type === 'jobs') {
@@ -709,9 +813,11 @@ createApp({
             loadFiles, openFile, playSegment, togglePlay, stageText, stepClass, rubyHtml, fmtTime, fmtDate, plainOf,
             jobs, jobsOpen, logJobId, logEl, fakeAi, split, locked, plainCount, staleCount, codeBusy, canApplySplit,
             activeJobs, jobsNewestFirst, jobsSummary, logText,
+            eventsDown, uploadStatus, currentJobText,
             upload, uploadJob, uploadRunning, uploadDone, dryRun, canUpload, uploadTail, staleCodes, uploadWarnings,
             openUpload, submitUpload, confirmUpload,
             openSplit, closeSplit, suggestPause, applySplit, submitJob, cancelJob,
+            segmentWork, submitSegmentJob, noteFor,
             uncorrectedCount, revertCorrection, diffHtml, plainText, wasChanged,
             startEdit, saveText, dropFurigana, joinNext, cut, deleteSegment, toggleHistory, restore, undo,
         }

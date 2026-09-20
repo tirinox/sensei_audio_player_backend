@@ -229,3 +229,21 @@ button.on { border-color: var(--accent); }
 .seg-diff del { color: var(--unsplit); background: #c0392b22; text-decoration: line-through; }
 .seg-diff ins { color: var(--done); background: #2e9e5b22; text-decoration: none; }
 .seg-diff a { color: var(--muted); font-size: 12px; margin-left: 8px; }
+
+/* a segment that an AI job is working on */
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes working-glow { 50% { box-shadow: inset 3px 0 var(--no_text), 0 0 0 1px var(--no_text); } }
+.spinner { display: inline-block; width: 11px; height: 11px; border: 2px solid var(--no_text); border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -1px; margin-right: 5px; }
+.working-badge { color: var(--no_text); white-space: nowrap; }
+.segment.working { border-color: var(--no_text); box-shadow: inset 3px 0 var(--no_text); animation: working-glow 1.2s ease-in-out infinite; }
+.segment.working .seg-text { opacity: .6; }
+.seg-note { font-size: 12px; margin-top: 3px; }
+.seg-note.ok { color: var(--done); }
+.seg-note.failed { color: var(--unsplit); }
+
+.spinner.light { border-color: #fff; border-right-color: transparent; }
+button:disabled .spinner { opacity: 1; }
+.upload-progress { margin: 8px 0; }
+.upload-progress progress { width: 100%; height: 8px; }
+.upload-status { font: 11px/1.5 ui-monospace, Menlo, monospace; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+button.running:disabled { opacity: 1; cursor: progress; }

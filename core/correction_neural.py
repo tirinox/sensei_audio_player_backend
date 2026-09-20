@@ -10,10 +10,14 @@ of what was actually SAID. Use the meaning of the whole recording, not only of t
 
 What to fix:
 
-1. Wrong kanji and homophones. Speech recognition often picks a word that sounds the same but does not fit the meaning.
-   Choose the word that fits the context of the phrase and of the neighbouring phrases.
-   Examples: 手紙をかく → 書く, 絵をかく → 描く; 暑い (weather) / 熱い (things) / 厚い (thick); 聞く / 効く / 利く;
-   早い (early) / 速い (fast); 会う / 合う; 変える / 帰る / 買える; 以外 / 意外; 機会 / 機械; 感心 / 関心.
+1. Wrong kanji and homophones. THIS IS THE MOST IMPORTANT PART. Speech recognition writes what it hears, so it often
+   picks a word that sounds the same but means something else. First read all the lines and understand what the
+   recording is about. Then go through every noun, verb and adjective written in kanji and ask: does THIS word make sense
+   here, in this topic? If it does not, and a word with the same pronunciation does, replace it.
+   Examples: 手紙をかく → 書く, but 絵 / 似顔絵 / 漫画 / 地図をかく → 描く; 性格 (character) / 正確 (accurate);
+   暑い (weather) / 熱い (things) / 厚い (thick); 聞く / 効く / 利く; 早い (early) / 速い (fast); 会う / 合う;
+   変える / 帰る / 買える; 以外 / 意外; 機会 / 機械; 感心 / 関心; 自信 / 自身 / 地震; 公園 / 講演; 最近 / 細菌.
+   A word that the neighbouring lines use in the right spelling is a strong hint (正確な似顔絵 ... 性格で → 正確で).
    Fix misheard words and names only when the context makes the intended word clear.
 
 2. Kanji vs kana, as in a modern textbook for this level.
@@ -46,16 +50,19 @@ What you must NOT do:
   fillers or repetitions. The text must still match the audio word for word. The speaker's mistakes stay.
 - Never insert, delete or replace particles (は, が, を, に, の, で, と, も, へ, から, まで ...) and never change verb forms.
   If read aloud, your line must sound exactly like the original line. Changing only the spelling is the whole job.
-  (プロ・スポーツ may become プロスポーツ, but never プロのスポーツ.)
+  Replace the misspelled word itself and nothing around it: 性格で → 正確で (NOT 正確に), プロ・スポーツ → プロスポーツ
+  (NOT プロのスポーツ).
 - Do not merge, split, reorder, skip or add lines. Line N of the output is the corrected line N of the input.
 - Do not add furigana, readings, translations, comments or explanations.
-- If a line is already correct, return it unchanged. When unsure, keep the original.
+- If a line is already correct, return it unchanged. When unsure about punctuation or kana/kanji style, keep the
+  original. But a word that makes no sense in its context, while its homophone does, is an error: fix it.
 
 Output: exactly the same numbered list (same numbers, same count of lines), corrected text only.
 """
 
 CONTEXT_HEADER = "Previous phrases of the same recording, for context only. Do NOT include them in the output:"
 TASK_HEADER = "Lines to correct:"
+FOCUS_NOTE = "The user suspects a recognition error in line {n} (most likely a wrong homophone). Check that line with special care."
 
 
 class CorrectionNeural(FuriganaNeural):
@@ -77,19 +84,21 @@ class CorrectionNeural(FuriganaNeural):
             result.extend(self._correct_chunk(chunk, context))
         return result
 
-    def correct_one(self, sentences, index, window=4):
-        """Correct sentences[index]; its neighbours go along so the LLM sees the context"""
+    def correct_one(self, sentences, index, window=12):
+        """Correct sentences[index]; its neighbours go along so the LLM sees the context (a few lines are not enough)"""
         first = max(0, index - window)
-        corrected = self._correct_chunk(sentences[first:index + window + 1], [])
+        corrected = self._correct_chunk(sentences[first:index + window + 1], [], focus=index - first + 1)
         return corrected[index - first]
 
-    def _correct_chunk(self, chunk, context):
+    def _correct_chunk(self, chunk, context, focus=None):
         text = self.prompt + '\n\n'
         if context:
             text += CONTEXT_HEADER + '\n' + '\n'.join(context) + '\n\n'
         text += TASK_HEADER + '\n'
         for i, sentence in enumerate(chunk, 1):
             text += f"{i}. {sentence}\n"
+        if focus:
+            text += '\n' + FOCUS_NOTE.format(n=focus) + '\n'
 
         print("Requesting AI correction for", len(chunk), "sentences")
         response = self._request_ai(text, temperature=self.TEMPERATURE)

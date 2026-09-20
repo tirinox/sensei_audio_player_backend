@@ -38,7 +38,7 @@ class FakeCorrector:
         time.sleep(1.5)
         return [sentence.replace('テスト', 'テスト、').replace('を書く', 'を描く') for sentence in sentences]
 
-    def correct_one(self, sentences, index, window=4):
+    def correct_one(self, sentences, index, window=12):
         return self.correct([sentences[index]])[0]
 
 
@@ -259,9 +259,14 @@ def parse_rsync(lines, source_path):
 
 def upload_dry(job, jobs):
     """Bring index.json up to date, then ask rsync what it would do"""
+    print("Looking for codes with a stale index.json...")
     reindexed = [entry["code"] for entry in library.upload_report(AUDIO_SOURCE_PATH) if entry["stale"]]
-    for code in reindexed:
+    for n, code in enumerate(reindexed):
+        jobs.set_progress(job, n, len(reindexed) + 1)
+        print(f"Reindexing {code}...")
         reindex_code(code)
+    jobs.set_progress(job, len(reindexed), len(reindexed) + 1)
+    print("Asking rsync what would change (dry run)...")
     job.data = {**parse_rsync(run_upload(dry_run=True), AUDIO_SOURCE_PATH), "reindexed": reindexed}
     print(f"{len(job.data['upload'])} files to upload, {len(job.data['delete'])} to delete on the host")
 
