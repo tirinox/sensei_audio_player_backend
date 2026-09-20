@@ -38,7 +38,8 @@ abstractions, frameworks, or defensive layers the code doesn't already have.
 | `core/furigana.py` | Legacy MeCab/pykakasi furigana + ruby ⇄ `[漢字](かんじ)` converters. |
 | `core/tui.py` | `run_menu()` — curses picker with type-to-filter and optional timeout. |
 | `core/player.py`, `core/waveform.py` | Segment playback demo, waveform PNG rendering. |
-| `webui.py`, `ui/` | Streamlit UI: segment editor (edit text, join segments) + "make upload" button. |
+| `editor/` | New web editor (work in progress, replaces the Streamlit UI): `server.py` — FastAPI app (JSON API, MP3 with Range, static files), `library.py` — scans codes/files and computes per-file processing status, `static/` — no-build frontend (Vue 3 + wavesurfer.js as ES modules from jsDelivr, so it needs internet). Read-only for now. |
+| `webui.py`, `ui/` | Legacy Streamlit UI (to be removed once the editor covers it): segment editor (edit text, join segments) + "make upload" button. |
 | `scripts/upload.sh` | `sshpass` + `rsync --delete` of the audio DB to the host; `--dry-run` only lists the changes. |
 | `tests/` | `pytest` tests for the pure logic (segments, splitter, backups). |
 | `experiment/`, `foo.py` | Scratch scripts (VK downloaders, prompt tests). Not part of the pipeline; some need packages that aren't installed (`vk_api`, `prompt_toolkit`). |
@@ -89,7 +90,8 @@ for upload. macOS is assumed (`afplay` in `au_sep`).
 uv sync                      # create/update .venv
 cp example.env .env          # then fill in values
 uv run python pg.py <cmd>    # or activate .venv and use `make <target>`
-uv run streamlit run webui.py
+uv run uvicorn editor.server:app --port 8377   # web editor
+uv run streamlit run webui.py                   # legacy UI
 ```
 
 The Makefile calls bare `python`, so it relies on an activated venv.
@@ -105,7 +107,8 @@ The Makefile calls bare `python`, so it relies on an activated venv.
 | `convert_ruby`, `cvt_seg_v3`, `waveform`, `play_demo`, `foo` | `foo` | One-off migrations / demos. |
 | — | `upload` | `scripts/upload.sh` — rsync with `--delete` to the production host. |
 | — | `upload-dry` | Same with `rsync -n`: lists what would be copied/deleted. Still connects to the host. |
-| — | `webui` | Streamlit UI. |
+| — | `editor` | Web editor at http://127.0.0.1:8377 (`uvicorn editor.server:app`). |
+| — | `webui` | Legacy Streamlit UI. |
 
 Environment variables (see `example.env`; it is incomplete — these are all the ones the code reads):
 
@@ -139,6 +142,10 @@ Environment variables (see `example.env`; it is incomplete — these are all the
 Pure logic — `SegmentManager`, `detect_pieces`, `process_numbered_list`, furigana regex
 converters, `AudioIndexer` — can be checked with a short script against a temp directory.
 New pure logic should come with tests in `tests/`.
+
+**Trying the editor.** `.claude/launch.json` starts it against `temp/editor_db` — a small git-ignored copy of a few
+files from the real DB (create it by copying a couple of `lb_*.mp3` + their `_segments.json` into
+`temp/editor_db/<CODE>/`). Never point a dev server you are experimenting with at the real `audio_db/`.
 
 **Code style.** Follow what is there: plain functions and small classes, `print()` for progress
 (no logging framework), `tqdm` for loops, f-strings, `os.path` for paths, JSON written with

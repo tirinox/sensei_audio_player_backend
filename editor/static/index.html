@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sensei Audio Editor</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app" v-cloak>
+    <aside class="sidebar">
+        <header class="sidebar-head">
+            <h1>Sensei Audio Editor</h1>
+            <div class="row">
+                <select v-model="code" class="grow" title="Course code">
+                    <option v-for="c in codes" :key="c.code" :value="c.code">{{ c.code }} ({{ c.n_files }})</option>
+                </select>
+                <button class="icon" @click="loadFiles()" title="Rescan the directory">↻</button>
+            </div>
+            <input type="search" v-model="filter" placeholder="Filter files…">
+            <div class="chips">
+                <button v-for="s in stageChips" :key="s.stage" class="chip" :class="[s.stage, {on: stageFilter === s.stage}]"
+                        @click="stageFilter = stageFilter === s.stage ? '' : s.stage" :title="s.hint">
+                    {{ s.label }} <b>{{ s.count }}</b>
+                </button>
+            </div>
+        </header>
+
+        <ul class="files">
+            <li v-for="f in visibleFiles" :key="f.name" :class="{active: current && current.name === f.name}"
+                @click="openFile(f.name)">
+                <span class="dot" :class="f.stage"></span>
+                <span class="file-name" :title="f.name">{{ f.title }}</span>
+                <span class="badge" :class="f.stage">{{ stageText(f) }}</span>
+                <span v-if="f.index_stale" class="badge stale" title="index.json does not match the segments, reindex is needed">idx</span>
+            </li>
+            <li v-if="!visibleFiles.length" class="empty">No files</li>
+        </ul>
+        <footer class="sidebar-foot" :title="sourcePath">{{ sourcePath }}</footer>
+    </aside>
+
+    <main>
+        <div v-if="error" class="error" @click="error = ''">{{ error }}</div>
+
+        <div v-if="!current" class="placeholder">Pick a file on the left</div>
+
+        <template v-else>
+            <header class="file-head">
+                <div>
+                    <h2>{{ current.title }}</h2>
+                    <div class="sub">{{ current.code }} / {{ current.name }}</div>
+                </div>
+                <div class="steps">
+                    <span class="step" :class="current.processed ? 'ok' : 'todo'">converted</span>
+                    <span class="step" :class="current.n_segments ? 'ok' : 'todo'">split · {{ current.n_segments }}</span>
+                    <span class="step" :class="stepClass(current.n_text, current.n_segments)">text · {{ current.n_text }}/{{ current.n_segments }}</span>
+                    <span class="step" :class="stepClass(current.n_furigana, current.n_segments)">furigana · {{ current.n_furigana }}/{{ current.n_segments }}</span>
+                    <span class="step" :class="current.index_stale || !current.in_index ? 'todo' : 'ok'">indexed</span>
+                </div>
+            </header>
+
+            <section class="wave-box">
+                <div ref="waveEl" class="wave"></div>
+                <div v-if="waveLoading" class="wave-loading">Loading audio…</div>
+            </section>
+
+            <section class="transport">
+                <button class="primary" @click="togglePlay()" title="Space">{{ playing ? '❚❚ Pause' : '▶ Play' }}</button>
+                <button @click="playSegment(activeIndex - 1)" :disabled="activeIndex <= 0" title="↑">⏮ Prev</button>
+                <button @click="playSegment(activeIndex)" :disabled="activeIndex < 0" title="Enter">↺ Repeat</button>
+                <button @click="playSegment(activeIndex + 1)" :disabled="activeIndex >= current.segments.length - 1" title="↓">Next ⏭</button>
+                <label class="check"><input type="checkbox" v-model="stopAtEnd"> stop at segment end</label>
+                <span class="time">{{ fmtTime(time) }} / {{ fmtTime(duration) }}</span>
+                <span class="grow"></span>
+                <label>speed
+                    <select v-model.number="rate">
+                        <option v-for="r in [0.5, 0.75, 1, 1.25, 1.5]" :key="r" :value="r">{{ r }}×</option>
+                    </select>
+                </label>
+                <label>zoom <input type="range" min="0" max="300" step="5" v-model.number="zoom"></label>
+            </section>
+
+            <section class="segments">
+                <div v-if="!current.segments.length" class="placeholder small">
+                    {{ current.processed ? 'The file is not split into phrases yet' : 'Incoming file: it is not converted yet' }}
+                </div>
+                <article v-for="(s, i) in current.segments" :key="i" class="segment"
+                         :class="{active: i === activeIndex, 'no-text': !s.text}" :ref="el => segmentEls[i] = el"
+                         @click="playSegment(i)">
+                    <div class="seg-num">{{ i + 1 }}</div>
+                    <div class="seg-body">
+                        <div v-if="s.text" class="seg-text" v-html="rubyHtml(s.text)"></div>
+                        <div v-else class="seg-text muted">no text</div>
+                        <div v-if="s.original_text !== undefined" class="seg-original">{{ s.original_text }}</div>
+                    </div>
+                    <div class="seg-meta">
+                        <span>{{ fmtTime(s.start / 1000, true) }} – {{ fmtTime(s.end / 1000, true) }}</span>
+                        <span>{{ ((s.end - s.start) / 1000).toFixed(1) }} s</span>
+                        <span class="badge" :class="s.original_text !== undefined ? 'done' : (s.text ? 'no_furigana' : 'no_text')">
+                            {{ s.original_text !== undefined ? 'furigana' : (s.text ? 'plain' : 'empty') }}
+                        </span>
+                    </div>
+                </article>
+            </section>
+        </template>
+    </main>
+</div>
+<script type="module" src="app.js"></script>
+</body>
+</html>

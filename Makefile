@@ -36,6 +36,10 @@ furiganate: # Furiganate the database entries.
 foo: # Placeholder for future tasks.
 	python pg.py foo
 
+.PHONY: editor
+editor: # Run the web editor (segments, pipeline steps) at http://127.0.0.1:8377
+	python -m uvicorn editor.server:app --host 127.0.0.1 --port 8377
+
 .PHONY: webui
 webui: # Run the Streamlit web application.
 	streamlit run webui.py
