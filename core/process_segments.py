@@ -11,7 +11,7 @@ load_dotenv()
 g_sr = None
 
 
-def fill_text_for(metadata: SegmentManager, audio=None, sr=None, skip_existing=True):
+def fill_text_for(metadata: SegmentManager, audio=None, sr=None, skip_existing=True, on_progress=None):
     global g_sr
     if not sr:
         if not g_sr:
@@ -24,7 +24,10 @@ def fill_text_for(metadata: SegmentManager, audio=None, sr=None, skip_existing=T
     lonely_segments = metadata.segments_without_text
     print(f"Processing {metadata.original_filename}, it has {len(lonely_segments)} segments without text")
 
-    for segment in tqdm(lonely_segments):
+    for i, segment in enumerate(tqdm(lonely_segments)):
+        if on_progress:
+            on_progress(i, len(lonely_segments))
+
         start, end = segment['start'], segment['end']
 
         if segment.get('text') and skip_existing:
@@ -47,3 +50,6 @@ def fill_text_for(metadata: SegmentManager, audio=None, sr=None, skip_existing=T
         print(f"Recognized: {text} ({len(text) = }) for {start}..{end}")
         segment['text'] = text
         metadata.save()
+
+    if on_progress:
+        on_progress(len(lonely_segments), len(lonely_segments))

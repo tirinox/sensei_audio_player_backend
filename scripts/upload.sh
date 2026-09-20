@@ -15,10 +15,21 @@ then
     exit 1
 fi
 
-sshpass -p "$SSH_PASSWORD" rsync -av --delete  $AUDIO_SOURCE_PATH/* $SSH_USER@$SSH_HOST:$SSH_DEST_AUDIO_DB
+# --dry-run only lists what would be uploaded and deleted on the host
+RSYNC_FLAGS="-av --delete"
+if [ "$1" = "--dry-run" ]; then
+    RSYNC_FLAGS="-avn --delete"
+    echo "Dry run: nothing will be changed on the host."
+fi
+
+sshpass -p "$SSH_PASSWORD" rsync $RSYNC_FLAGS  $AUDIO_SOURCE_PATH/* $SSH_USER@$SSH_HOST:$SSH_DEST_AUDIO_DB
 
 if [ $? -eq 0 ]; then
-    echo "Directory copied successfully!"
+    if [ "$1" = "--dry-run" ]; then
+        echo "Dry run finished."
+    else
+        echo "Directory copied successfully!"
+    fi
 else
     echo "Error occurred during copying!"
     exit 1

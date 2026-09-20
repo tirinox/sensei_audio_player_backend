@@ -28,20 +28,22 @@ abstractions, frameworks, or defensive layers the code doesn't already have.
 | `core/config.py` | `AUDIO_SOURCE_PATH` (from `.env`, made absolute), `NORMALIZE_TO_DBFS`. |
 | `core/file_man.py` | MP3 discovery, course-code selection, filename cleanup, `lb_` check. |
 | `core/audio_utils.py` | Load audio, ffprobe length/bitrate, safe normalization, low-bitrate convert. |
-| `core/splitter.py` | Silence-based phrase detection → `(start_ms, end_ms)` list. |
+| `core/splitter.py` | Silence-based phrase detection → `(start_ms, end_ms)` list; whole file or only a range (`detect_pieces_in_range`). |
 | `core/speech.py` | `SpeechRecognitionWhisper` (in use) and `SpeechRecognitionGoogle` (legacy). |
 | `core/process_segments.py` | `fill_text_for()` — transcribes segments lacking text, saves after each. |
-| `core/segment_man.py` | `SegmentManager` — load/save/edit `<file>.mp3_segments.json`. |
+| `core/segment_man.py` | `SegmentManager` — load/save/edit `<file>.mp3_segments.json` (texts, join, split, bounds, delete). |
+| `core/backup.py` | Timestamped copies of segment files under `BACKUP_PATH` (outside the audio DB), list/restore. |
 | `core/indexer.py` | `AudioIndexer` — builds/loads `<CODE>/index.json`. |
 | `core/furigana_neural.py` | `FuriganaNeural` — LLM furigana; prompt lives here as `PROMPT_1`. |
 | `core/furigana.py` | Legacy MeCab/pykakasi furigana + ruby ⇄ `[漢字](かんじ)` converters. |
 | `core/tui.py` | `run_menu()` — curses picker with type-to-filter and optional timeout. |
 | `core/player.py`, `core/waveform.py` | Segment playback demo, waveform PNG rendering. |
 | `webui.py`, `ui/` | Streamlit UI: segment editor (edit text, join segments) + "make upload" button. |
-| `scripts/upload.sh` | `sshpass` + `rsync --delete` of the audio DB to the host. |
+| `scripts/upload.sh` | `sshpass` + `rsync --delete` of the audio DB to the host; `--dry-run` only lists the changes. |
+| `tests/` | `pytest` tests for the pure logic (segments, splitter, backups). |
 | `experiment/`, `foo.py` | Scratch scripts (VK downloaders, prompt tests). Not part of the pipeline; some need packages that aren't installed (`vk_api`, `prompt_toolkit`). |
 
-Git-ignored and local-only: `.env`, `cred/`, `audio_db/`, `temp/`, `.idea/`, `waveform.png`.
+Git-ignored and local-only: `.env`, `cred/`, `audio_db/`, `backups/`, `temp/`, `.idea/`, `waveform.png`.
 
 ## Data model
 
@@ -102,12 +104,14 @@ The Makefile calls bare `python`, so it relies on an activated venv.
 | `normalize_volumes` | — | Re-normalize loudness of every MP3 in a code in place. |
 | `convert_ruby`, `cvt_seg_v3`, `waveform`, `play_demo`, `foo` | `foo` | One-off migrations / demos. |
 | — | `upload` | `scripts/upload.sh` — rsync with `--delete` to the production host. |
+| — | `upload-dry` | Same with `rsync -n`: lists what would be copied/deleted. Still connects to the host. |
 | — | `webui` | Streamlit UI. |
 
 Environment variables (see `example.env`; it is incomplete — these are all the ones the code reads):
 
 - `AUDIO_SOURCE_PATH` — required; `core/config.py` fails at import without it.
 - `CODE` — preselects the course code and skips the curses menu, e.g. `CODE=JPLTX make reindex`.
+- `BACKUP_PATH` — where segment file backups go (default `./backups`).
 - `MIN_SILENCE_LEN_MS` (800), `PADDING_MS` (200), `SILENCE_THRESHOLD_DB` (-40) — splitter tuning.
 - `AI_API_KEY` (required for furigana), `AI_API_URL` (default `https://api.deepseek.com`),
   `AI_API_MODEL` (default `deepseek-chat`).
@@ -129,11 +133,12 @@ Environment variables (see `example.env`; it is incomplete — these are all the
   it) when you need to exercise the pipeline, and ask before touching the real DB or uploading.
 - Never print, commit or copy the contents of `.env` or `cred/`.
 
-**Verification.** There are no tests, linter config or CI. After a change, at minimum run
-`uv run python -c "import pg"` (catches import/syntax errors; prints a harmless pykakasi warning).
+**Verification.** No linter config or CI. After a change run `uv run pytest` (fast, no Whisper/LLM/network;
+`tests/conftest.py` points `AUDIO_SOURCE_PATH` to a temp dir) and `uv run python -c "import pg"`
+(catches import/syntax errors; prints a harmless pykakasi warning).
 Pure logic — `SegmentManager`, `detect_pieces`, `process_numbered_list`, furigana regex
 converters, `AudioIndexer` — can be checked with a short script against a temp directory.
-If you add tests, use `pytest` in a `tests/` directory and add it as a dev dependency via `uv add --dev`.
+New pure logic should come with tests in `tests/`.
 
 **Code style.** Follow what is there: plain functions and small classes, `print()` for progress
 (no logging framework), `tqdm` for loops, f-strings, `os.path` for paths, JSON written with

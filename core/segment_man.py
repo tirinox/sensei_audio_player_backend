@@ -72,6 +72,9 @@ class SegmentManager:
                     if version not in (2, 3):
                         raise ValueError(f"Unsupported version: {version}")
 
+                    self.title = data.get('title') or self.title
+                    self.length = data.get('length') or 0
+
                     segments = data['segments']
                     if isinstance(segments, dict):
                         self.segments = list(segments.values())
@@ -108,14 +111,36 @@ class SegmentManager:
         if len(new_sentences) != len(self.segments):
             raise ValueError("Number of sentences does not match number of segments!")
 
-        for segment, new_text in zip(self.sorted_segments, new_sentences):
-            segment.setdefault("original_text", segment["text"])
-            segment['text'] = new_text
+        for i, new_text in enumerate(new_sentences):
+            self.set_furigana(i, new_text)
+
+    def _check_index(self, i):
+        if not 0 <= i < len(self.segments):
+            raise IndexError("Segment index out of range")
 
     def set_text(self, i, new_text):
+        self._check_index(i)
+        self.segments[i]['text'] = new_text
+
+    def set_original_text(self, i, new_text):
+        self._check_index(i)
         seg = self.segments[i]
-        seg.setdefault("original_text", new_text)
-        seg['text'] = new_text
+        # original_text marks a segment as furiganated, so never create it here
+        if 'original_text' not in seg:
+            raise ValueError("Segment is not furiganated, edit its text instead")
+        seg['original_text'] = new_text
+
+    def set_furigana(self, i, furigana_text):
+        self._check_index(i)
+        seg = self.segments[i]
+        seg.setdefault("original_text", seg["text"])
+        seg['text'] = furigana_text
+
+    def drop_furigana(self, i):
+        self._check_index(i)
+        seg = self.segments[i]
+        if 'original_text' in seg:
+            seg['text'] = seg.pop('original_text')
 
     def set_segments(self, segments):
         self.segments = [
@@ -128,8 +153,8 @@ class SegmentManager:
         self.sort()
 
     def join_segments(self, id1, id2):
-        if id1 >= len(self.segments) or id2 >= len(self.segments):
-            raise IndexError("Segment index out of range")
+        self._check_index(id1)
+        self._check_index(id2)
 
         if id1 > id2:
             id1, id2 = id2, id1
@@ -146,6 +171,59 @@ class SegmentManager:
             "text": f"{segment1['text']} {segment2['text']}".strip(),
         }
 
+        if 'original_text' in segment1 or 'original_text' in segment2:
+            original1 = segment1.get('original_text', segment1['text'])
+            original2 = segment2.get('original_text', segment2['text'])
+            new_segment['original_text'] = f"{original1} {original2}".strip()
+
         self.segments[id1] = new_segment
         del self.segments[id2]
+        self.sort()
+
+    def split_segment(self, i, at_ms):
+        self._check_index(i)
+        seg = self.segments[i]
+        at_ms = int(at_ms)
+        if not seg['start'] < at_ms < seg['end']:
+            raise ValueError("Split point must be inside the segment")
+
+        # the texts stay in the first half; the second one is left for transcription
+        second = {
+            "start": at_ms,
+            "end": seg['end'],
+            "text": "",
+        }
+        seg['end'] = at_ms
+        self.segments.insert(i + 1, second)
+
+    def set_bounds(self, i, start, end):
+        self._check_index(i)
+        start, end = int(start), int(end)
+        if start < 0 or start >= end:
+            raise ValueError("Invalid segment bounds")
+        if i > 0 and start < self.segments[i - 1]['end']:
+            raise ValueError("Segment overlaps the previous one")
+        if i + 1 < len(self.segments) and end > self.segments[i + 1]['start']:
+            raise ValueError("Segment overlaps the next one")
+
+        self.segments[i]['start'] = start
+        self.segments[i]['end'] = end
+
+    def delete_segment(self, i):
+        self._check_index(i)
+        del self.segments[i]
+
+    def replace_segment(self, i, pieces):
+        """Replace segment i with new empty segments, e.g. after re-splitting only its range"""
+        self._check_index(i)
+        if not pieces:
+            raise ValueError("No pieces to replace the segment with")
+
+        self.segments[i:i + 1] = [
+            {
+                "start": start,
+                "end": end,
+                "text": "",
+            } for start, end in pieces
+        ]
         self.sort()

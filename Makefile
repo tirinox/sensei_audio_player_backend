@@ -20,6 +20,10 @@ process-incoming: # Process incoming messages.
 upload: # Upload the audio files.
 	scripts/upload.sh
 
+.PHONY: upload-dry
+upload-dry: # Show what upload would copy and delete on the host, without doing it.
+	scripts/upload.sh --dry-run
+
 .PHONY: update
 update: # Rescan the audio file using specified pause duration
 	python pg.py update

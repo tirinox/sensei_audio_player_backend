@@ -19,3 +19,12 @@ dependencies = [
     "streamlit>=1.53.1",
     "tqdm>=4.67.1",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

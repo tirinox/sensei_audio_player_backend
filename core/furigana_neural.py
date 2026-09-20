@@ -104,6 +104,12 @@ class FuriganaNeural:
 
         return lines
 
+    def generate_furigana_one(self, sentence):
+        lines = [line for line in self.generate_furigana([sentence]) if line.strip()]
+        if len(lines) != 1:
+            raise ValueError(f"Expected one line of furigana, got {len(lines)}")
+        return lines[0]
+
     @classmethod
     def from_env(cls):
         api_url = os.environ.get("AI_API_URL", "https://api.deepseek.com")

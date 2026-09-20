@@ -162,6 +162,7 @@ cython_debug/
 
 # DB
 audio_db/
+backups/
 
 # Credentials folder
 cred/
