@@ -38,8 +38,7 @@ abstractions, frameworks, or defensive layers the code doesn't already have.
 | `core/furigana.py` | Legacy MeCab/pykakasi furigana + ruby ⇄ `[漢字](かんじ)` converters. |
 | `core/tui.py` | `run_menu()` — curses picker with type-to-filter and optional timeout. |
 | `core/player.py`, `core/waveform.py` | Segment playback demo, waveform PNG rendering. |
-| `editor/` | Web editor (replaces the Streamlit UI). `server.py` — FastAPI app: JSON API, MP3 with Range, static files, SSE at `/api/events`. `library.py` — scans codes/files, computes per-file status (`incoming` → `unsplit` → `no_text` → `no_furigana` → `done`, `index_stale`). `jobs.py` — one worker thread + queue for slow steps; its `print()` output becomes the job log; a file with a queued/running job is read-only (HTTP 423). `pipeline.py` — job handlers: `convert` (original is moved to `BACKUP_PATH/originals/<CODE>/`, not deleted), `split`, `transcribe`, `furigana` (only segments without `original_text`), `furigana_segment`, `reindex`, and the global `upload_dry` (reindexes stale codes, then `scripts/upload.sh --dry-run`, parses what rsync would send/delete) and `upload` (accepted only right after a successful dry run, with no stale index and no other active jobs; refused when the editor's `AUDIO_SOURCE_PATH` differs from the one in `.env`, because `upload.sh` reads `.env` itself); jobs can be chained with `then`. `static/` — no-build frontend (Vue 3 + wavesurfer.js as ES modules from jsDelivr, so it needs internet). Edits (text, join, cut, delete, re-split of a file or of one segment with a preview) are done right in the request, carry the segment's `start`/`end` (409 if the file changed meanwhile), are saved at once, and the previous version goes to `core/backup.py` first (Undo/History in the UI). |
-| `webui.py`, `ui/` | Legacy Streamlit UI (to be removed once the editor covers it): segment editor (edit text, join segments) + "make upload" button. |
+| `editor/` | Web editor: FastAPI server + no-build frontend. See **Web editor** below. |
 | `scripts/upload.sh` | `sshpass` + `rsync --delete` of the audio DB to the host; `--dry-run` only lists the changes. |
 | `tests/` | `pytest` tests for the pure logic (segments, splitter, backups). |
 | `experiment/`, `foo.py` | Scratch scripts (VK downloaders, prompt tests). Not part of the pipeline; some need packages that aren't installed (`vk_api`, `prompt_toolkit`). |
@@ -80,6 +79,30 @@ Segments file (`SegmentManager.VERSION = 3`):
 - These formats are a contract with the frontend repo. Changing field names or the furigana
   markup requires a matching frontend change — flag this to the user rather than doing it silently.
 
+## Web editor
+
+`make editor` → http://127.0.0.1:8377. It covers the whole workflow without the CLI: see what is processed, run the
+pipeline steps per file, fix segments and texts, upload.
+
+| File | Role |
+|---|---|
+| `editor/server.py` | FastAPI app: JSON API, MP3 with Range, static files, SSE at `/api/events`. |
+| `editor/library.py` | Scans codes/files; per-file status `incoming` → `unsplit` → `no_text` → `no_furigana` → `done`, plus `index_stale` (index.json does not match the segments). |
+| `editor/jobs.py` | One worker thread + queue for the slow steps. `print()` of the worker becomes the job log. Jobs can be chained with `then`. |
+| `editor/pipeline.py` | Job handlers, see below. |
+| `editor/static/` | Frontend: Vue 3 + wavesurfer.js loaded as ES modules from jsDelivr (needs internet), no build step. |
+
+- **Edits** (text, join, cut, delete, re-split of a file or of one segment, with a preview on the waveform) are done right in
+  the request. They carry the segment's `start`/`end` (409 if the file changed meanwhile), are saved at once, and the
+  previous version goes to `core/backup.py` first (Undo / History in the UI).
+- **Jobs**: `convert` (the original is moved to `BACKUP_PATH/originals/<CODE>/`, not deleted), `split`, `transcribe`
+  (segments without text), `furigana` (only segments without `original_text`), `furigana_segment`, `reindex`, and the global
+  `upload_dry` / `upload`. A file with a queued or running job is read-only (HTTP 423); an upload job locks everything.
+- **Upload**: `upload_dry` reindexes stale codes, runs `scripts/upload.sh --dry-run` and parses what rsync would send and
+  delete. `upload` is accepted only right after a successful dry run, with no stale index and no other active jobs.
+  `upload.sh` reads `AUDIO_SOURCE_PATH` from `.env` by itself, so uploading is refused when the editor was started with
+  another path.
+
 ## Setup and commands
 
 Python 3.10, dependencies managed with **uv** (`pyproject.toml` + `uv.lock` are the source of
@@ -91,7 +114,6 @@ uv sync                      # create/update .venv
 cp example.env .env          # then fill in values
 uv run python pg.py <cmd>    # or activate .venv and use `make <target>`
 uv run uvicorn editor.server:app --port 8377   # web editor
-uv run streamlit run webui.py                   # legacy UI
 ```
 
 The Makefile calls bare `python`, so it relies on an activated venv.
@@ -107,8 +129,7 @@ The Makefile calls bare `python`, so it relies on an activated venv.
 | `convert_ruby`, `cvt_seg_v3`, `waveform`, `play_demo`, `foo` | `foo` | One-off migrations / demos. |
 | — | `upload` | `scripts/upload.sh` — rsync with `--delete` to the production host. |
 | — | `upload-dry` | Same with `rsync -n`: lists what would be copied/deleted. Still connects to the host. |
-| — | `editor` | Web editor at http://127.0.0.1:8377 (`uvicorn editor.server:app`). |
-| — | `webui` | Legacy Streamlit UI. |
+| — | `editor` (alias `webui`) | Web editor at http://127.0.0.1:8377 (`uvicorn editor.server:app`). |
 
 Environment variables (see `example.env`; it is incomplete — these are all the ones the code reads):
 

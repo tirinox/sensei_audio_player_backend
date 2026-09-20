@@ -41,5 +41,4 @@ editor: # Run the web editor (segments, pipeline steps) at http://127.0.0.1:8377
 	python -m uvicorn editor.server:app --host 127.0.0.1 --port 8377 --timeout-graceful-shutdown 2
 
 .PHONY: webui
-webui: # Run the Streamlit web application.
-	streamlit run webui.py
+webui: editor # Same as editor (the old name).
