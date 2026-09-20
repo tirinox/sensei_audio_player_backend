@@ -40,6 +40,48 @@ function plainOf(text) {
     return text.replace(/\[([^\[\]]+)\]\(([^()]+)\)/g, '$1')
 }
 
+// what the AI correction changed: common text as it is, removed in <del>, added in <ins>
+const diffCache = new Map()
+
+function diffHtml(before, after) {
+    const key = before + '\u0000' + after
+    if (diffCache.has(key)) return diffCache.get(key)
+
+    const a = [...before], b = [...after]
+    // longest common subsequence, by characters
+    const lcs = Array.from({length: a.length + 1}, () => new Uint16Array(b.length + 1))
+    for (let i = a.length - 1; i >= 0; i--) {
+        for (let j = b.length - 1; j >= 0; j--) {
+            lcs[i][j] = a[i] === b[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1])
+        }
+    }
+
+    const parts = []
+    const push = (tag, ch) => {
+        const last = parts[parts.length - 1]
+        if (last && last.tag === tag) last.text += ch
+        else parts.push({tag, text: ch})
+    }
+    let i = 0, j = 0
+    while (i < a.length || j < b.length) {
+        if (i < a.length && j < b.length && a[i] === b[j]) push('', a[i++]), j++
+        else if (j < b.length && (i === a.length || lcs[i][j + 1] >= lcs[i + 1][j])) push('ins', b[j++])
+        else push('del', a[i++])
+    }
+    const html = parts.map(p => p.tag ? `<${p.tag}>${escapeHtml(p.text)}</${p.tag}>` : escapeHtml(p.text)).join('')
+    diffCache.set(key, html)
+    return html
+}
+
+function plainText(segment) {
+    // some old files have the markup in original_text too
+    return plainOf(segment.original_text !== undefined ? segment.original_text : (segment.text || ''))
+}
+
+function wasChanged(segment) {
+    return segment.raw_text !== undefined && segment.raw_text !== plainText(segment)
+}
+
 function fmtDate(iso) {
     const d = new Date(iso)
     const pad = n => String(n).padStart(2, '0')
@@ -120,6 +162,7 @@ createApp({
 
         const locked = computed(() => busy.value || !!(current.value && current.value.busy))
         const plainCount = computed(() => current.value ? current.value.segments.filter(s => s.text && s.original_text === undefined).length : 0)
+        const uncorrectedCount = computed(() => current.value ? current.value.segments.filter(s => s.text && s.raw_text === undefined).length : 0)
         const staleCount = computed(() => files.value.filter(f => f.index_stale).length)
         const codeBusy = computed(() => jobs.value.some(j => j.code === code.value && !j.name && isActive(j)))
         const canApplySplit = computed(() => split.pieces && split.pieces.length >= (split.index < 0 ? 1 : 2))
@@ -452,6 +495,7 @@ createApp({
         }
 
         const dropFurigana = i => change(`/segments/${i}/drop_furigana`, segmentRef(i), i)
+        const revertCorrection = i => change(`/segments/${i}/revert_correction`, segmentRef(i), i)
         const joinNext = i => change(`/segments/${i}/join`, segmentRef(i), i)
 
         function cut(i, atCursor) {
@@ -521,7 +565,7 @@ createApp({
         async function applySplit(thenProcess) {
             const name = current.value.name
             await change(splitPath(), splitBody(false), Math.max(split.index, 0))
-            if (thenProcess && !error.value) await submitJob('transcribe', name, {}, ['furigana'])
+            if (thenProcess && !error.value) await submitJob('transcribe', name, {}, ['correct', 'furigana'])
         }
 
         watch(() => [split.min_silence_len, split.padding, split.silence_thresh], () => split.open && requestPreview())
@@ -668,6 +712,7 @@ createApp({
             upload, uploadJob, uploadRunning, uploadDone, dryRun, canUpload, uploadTail, staleCodes, uploadWarnings,
             openUpload, submitUpload, confirmUpload,
             openSplit, closeSplit, suggestPause, applySplit, submitJob, cancelJob,
+            uncorrectedCount, revertCorrection, diffHtml, plainText, wasChanged,
             startEdit, saveText, dropFurigana, joinNext, cut, deleteSegment, toggleHistory, restore, undo,
         }
     },

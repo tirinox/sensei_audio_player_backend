@@ -1,9 +1,54 @@
+import difflib
 import json
 import os.path
+import re
 from typing import Dict, List
 
 from core.audio_utils import mp3_length_seconds
 from core.furigana import convert_ruby_to_parenthesis
+
+
+FURIGANA_MARKUP = re.compile(r'\[([^\[\]]+)\]\(([^()]+)\)')
+
+
+def strip_furigana(text):
+    """[漢字](かんじ) -> 漢字"""
+    return FURIGANA_MARKUP.sub(r'\1', text or '')
+
+
+PUNCTUATION = set(' \u3000、。，．,.？！?!「」『』（）()・…〜~：:；;')
+
+
+def carry_furigana(furigana_text, new_plain):
+    """
+    Move the furigana markup to a corrected plain text, when the correction touched only punctuation and spaces
+    outside of the [..](..) groups. Returns None if it is not that simple (the furigana has to be made again).
+    """
+    # one piece per character of the old plain text: a group sits on its first character
+    pieces, locked = [], []
+    position = 0
+    for match in FURIGANA_MARKUP.finditer(furigana_text):
+        for ch in furigana_text[position:match.start()]:
+            pieces.append(ch)
+            locked.append(False)
+        group_plain = match.group(1)
+        pieces.extend([match.group(0)] + [''] * (len(group_plain) - 1))
+        locked.extend([True] * len(group_plain))
+        position = match.end()
+    for ch in furigana_text[position:]:
+        pieces.append(ch)
+        locked.append(False)
+
+    old_plain = strip_furigana(furigana_text)
+    result = []
+    for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, old_plain, new_plain, autojunk=False).get_opcodes():
+        if op == 'equal':
+            result.extend(pieces[i1:i2])
+            continue
+        if any(locked[i1:i2]) or not set(old_plain[i1:i2] + new_plain[j1:j2]) <= PUNCTUATION:
+            return None
+        result.append(new_plain[j1:j2])
+    return ''.join(result)
 
 
 class SegmentManager:
@@ -136,6 +181,46 @@ class SegmentManager:
         seg.setdefault("original_text", seg["text"])
         seg['text'] = furigana_text
 
+    def plain_text(self, i):
+        # some old files have the furigana markup in original_text too, so it is always stripped
+        seg = self.segments[i]
+        return strip_furigana(seg.get('original_text', seg.get('text', '')))
+
+    @property
+    def segments_without_correction(self):
+        return [i for i, seg in enumerate(self.segments) if seg.get('text') and 'raw_text' not in seg]
+
+    def set_correction(self, i, corrected_text):
+        """
+        Result of the AI correction of the plain text. raw_text keeps what was there before the first correction;
+        its presence is how the code knows the segment was corrected (same idea as original_text for furigana).
+        Returns True if the text was changed. Its furigana is outdated then and is dropped,
+        unless only the punctuation was changed: then the furigana is moved to the new text.
+        """
+        self._check_index(i)
+        seg = self.segments[i]
+        plain = self.plain_text(i)
+        seg.setdefault('raw_text', plain)
+        if corrected_text == plain:
+            return False
+
+        carried = carry_furigana(seg['text'], corrected_text) if 'original_text' in seg else None
+        if carried is not None:
+            seg['text'] = carried
+            seg['original_text'] = corrected_text
+        else:
+            seg['text'] = corrected_text
+            seg.pop('original_text', None)
+        return True
+
+    def revert_correction(self, i):
+        """Back to the text before the correction. raw_text stays: the segment still counts as checked"""
+        self._check_index(i)
+        seg = self.segments[i]
+        if 'raw_text' in seg and seg['raw_text'] != self.plain_text(i):
+            seg['text'] = seg['raw_text']
+            seg.pop('original_text', None)
+
     def drop_furigana(self, i):
         self._check_index(i)
         seg = self.segments[i]
@@ -175,6 +260,9 @@ class SegmentManager:
             original1 = segment1.get('original_text', segment1['text'])
             original2 = segment2.get('original_text', segment2['text'])
             new_segment['original_text'] = f"{original1} {original2}".strip()
+
+        if 'raw_text' in segment1 and 'raw_text' in segment2:
+            new_segment['raw_text'] = f"{segment1['raw_text']} {segment2['raw_text']}".strip()
 
         self.segments[id1] = new_segment
         del self.segments[id2]

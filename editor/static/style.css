@@ -224,3 +224,8 @@ button.on { border-color: var(--accent); }
 .modal details.deleting { border-color: var(--unsplit); }
 .modal details.deleting summary { color: var(--unsplit); }
 .paths { list-style: none; margin: 6px 0 0; padding: 0; max-height: 160px; overflow-y: auto; font: 11px/1.5 ui-monospace, Menlo, monospace; color: var(--muted); }
+
+.seg-diff { font-size: 13px; margin-top: 3px; font-family: "Hiragino Sans", "Yu Gothic", "Noto Sans JP", sans-serif; cursor: default; }
+.seg-diff del { color: var(--unsplit); background: #c0392b22; text-decoration: line-through; }
+.seg-diff ins { color: var(--done); background: #2e9e5b22; text-decoration: none; }
+.seg-diff a { color: var(--muted); font-size: 12px; margin-left: 8px; }

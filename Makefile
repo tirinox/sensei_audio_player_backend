@@ -32,6 +32,10 @@ update: # Rescan the audio file using specified pause duration
 furiganate: # Furiganate the database entries.
 	python pg.py furiganate
 
+.PHONY: correct
+correct: # AI correction of the transcript of one file (homophones, kana/kanji, numbers, punctuation).
+	python pg.py correct
+
 .PHONY: foo
 foo: # Placeholder for future tasks.
 	python pg.py foo

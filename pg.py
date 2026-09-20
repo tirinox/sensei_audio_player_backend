@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from core.audio_utils import normalize_mp3_batch, convert_mp3_to_low_bitrate, load_audio_file, mp3_length_seconds, \
     au_sep
 from core.config import AUDIO_SOURCE_PATH
+from core.correction_neural import CorrectionNeural, correct_segments
 from core.file_man import waveform_out_path, ask_to_choose_the_code, is_processed_mp3_lb
 from core.furigana_neural import FuriganaNeural
 from core.indexer import AudioIndexer
@@ -127,6 +128,19 @@ def furiganate_all(indexer):
         seg.save()
 
 
+def correct_files(files):
+    """AI correction of the transcripts (wrong homophones, kana/kanji, numbers, punctuation); goes before furigana"""
+    corrector = CorrectionNeural.from_env()
+    for file in tqdm.tqdm(files):
+        seg = SegmentManager(file)
+        if not seg.load():
+            continue
+        try:
+            correct_segments(seg, corrector)
+        except ValueError as e:
+            print(f"🛑Correction failed for {file}: {e}")
+
+
 def process_incoming(only_new=True):
     code = ask_to_choose_the_code()
     indexer = AudioIndexer.from_code(code)
@@ -154,6 +168,8 @@ def process_incoming(only_new=True):
     realm = new_files if only_new else all_files
     for file in tqdm.tqdm(realm):
         force_speech_recognition(file, skip_existing_text=True)
+
+    correct_files(realm)
 
     reindex(code)
 
@@ -231,6 +247,16 @@ def furigana_1():
     seg.save()
 
 
+def correct_1():
+    code = ask_to_choose_the_code()
+
+    indexer = AudioIndexer.from_code(code)
+    all_files = indexer.get_all_mp3()
+
+    example_index = run_menu(all_files, timeout=0)
+    correct_files([all_files[example_index]])
+
+
 def update_one_file():
     example = get_example()
 
@@ -258,6 +284,8 @@ def update_one_file():
         min_silence_len_ms=min_silence_len_ms,
     )
 
+    correct_files([example])
+
     furiganator = FuriganaNeural.from_env()
 
     seg = SegmentManager(example)
@@ -281,6 +309,7 @@ command_map = {
     'convert_ruby': convert_ruby,
     'cvt_seg_v3': cvt_seg_from_dict_to_arr,
     'furiganate': furigana_1,
+    'correct': correct_1,
     'normalize_volumes': normalize_all_volumes,
 }
 

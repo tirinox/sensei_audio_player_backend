@@ -57,6 +57,7 @@ def file_status(mp3_path, index_entry=None):
         "has_segments": has_segments,
         "n_segments": len(segments),
         "n_text": sum(1 for s in segments if s.get('text')),
+        "n_corrected": sum(1 for s in segments if 'raw_text' in s),
         "n_furigana": sum(1 for s in segments if 'original_text' in s),
         "length": seg.length or (index_entry or {}).get('length') or 0,
         "in_index": index_entry is not None,

@@ -11,9 +11,10 @@ It turns raw lesson recordings (MP3) into a static "audio DB" consumed by a sepa
 1. normalize volume + re-encode incoming MP3s (`lb_` prefix = "low bitrate", processed)
 2. split each recording into phrases by silence detection (pydub)
 3. transcribe each phrase (local OpenAI Whisper `large`, language `ja`)
-4. add furigana via an LLM (OpenAI-compatible API, DeepSeek by default)
-5. build a per-course `index.json`
-6. rsync the audio DB to the web host
+4. correct the transcript with an LLM: wrong homophones, kana/kanji usage for N3–N2 learners, numbers, punctuation
+5. add furigana via an LLM (OpenAI-compatible API, DeepSeek by default)
+6. build a per-course `index.json`
+7. rsync the audio DB to the web host
 
 There is no server here: the output is just files (`*.mp3`, `*_segments.json`, `index.json`).
 This is a personal single-developer tool — keep changes simple and pragmatic; no need for
@@ -35,6 +36,7 @@ abstractions, frameworks, or defensive layers the code doesn't already have.
 | `core/backup.py` | Timestamped copies of segment files under `BACKUP_PATH` (outside the audio DB), list/restore. |
 | `core/indexer.py` | `AudioIndexer` — builds/loads `<CODE>/index.json`. |
 | `core/furigana_neural.py` | `FuriganaNeural` — LLM furigana; prompt lives here as `PROMPT_1`. |
+| `core/correction_neural.py` | `CorrectionNeural` (same LLM client, prompt `PROMPT_CORRECTION`) — fixes recognition errors in the plain transcript, in chunks of 25 lines with the previous lines as context; `correct_segments()` applies it to a file. |
 | `core/furigana.py` | Legacy MeCab/pykakasi furigana + ruby ⇄ `[漢字](かんじ)` converters. |
 | `core/tui.py` | `run_menu()` — curses picker with type-to-filter and optional timeout. |
 | `core/player.py`, `core/waveform.py` | Segment playback demo, waveform PNG rendering. |
@@ -74,6 +76,13 @@ Segments file (`SegmentManager.VERSION = 3`):
   plain transcript is kept in `original_text`. **The presence of `original_text` is how the code
   decides a segment was already furiganated** (`all_has_original_text`), so don't add that key
   for any other purpose.
+- `raw_text` is the plain text before the first AI correction. **Its presence is how the code decides a segment was
+  corrected** (equal to the current plain text = checked, nothing changed). When a correction changes the text,
+  `original_text` is dropped, so the segment gets furigana again — unless only punctuation/spaces changed: then
+  `carry_furigana()` moves the existing markup to the new text. The frontend does not use this key.
+- About 20 old files (JPDEM2, part of JPLTX) have the furigana markup inside `original_text` too. Always take the plain
+  text through `SegmentManager.plain_text(i)`, which strips it. (`get_digest()` does not, so the search digest of those
+  files contains markup.)
 - `index.json` entries: `audio_file`, `segment_file`, `n_segments`, `length`, `title`, `digest`
   (concatenated plain text, used for search). Custom `title`s are preserved across reindex.
 - These formats are a contract with the frontend repo. Changing field names or the furigana
@@ -96,7 +105,9 @@ pipeline steps per file, fix segments and texts, upload.
   the request. They carry the segment's `start`/`end` (409 if the file changed meanwhile), are saved at once, and the
   previous version goes to `core/backup.py` first (Undo / History in the UI).
 - **Jobs**: `convert` (the original is moved to `BACKUP_PATH/originals/<CODE>/`, not deleted), `split`, `transcribe`
-  (segments without text), `furigana` (only segments without `original_text`), `furigana_segment`, `reindex`, and the global
+  (segments without text), `correct` (only segments without `raw_text`; the whole text is sent for context),
+  `correct_segment` (one segment + neighbours; redoes its furigana if it had one), `furigana` (only segments without
+  `original_text`), `furigana_segment`, `reindex`, and the global
   `upload_dry` / `upload`. A file with a queued or running job is read-only (HTTP 423); an upload job locks everything.
 - **Upload**: `upload_dry` reindexes stale codes, runs `scripts/upload.sh --dry-run` and parses what rsync would send and
   delete. `upload` is accepted only right after a successful dry run, with no stale index and no other active jobs.
@@ -120,8 +131,9 @@ The Makefile calls bare `python`, so it relies on an activated venv.
 
 | Command (`pg.py`) | Make target | What it does |
 |---|---|---|
-| `process_incoming` | `process-incoming` | Full pipeline for new (non-`lb_`) files: convert → split → transcribe → reindex → furiganate everything not yet furiganated. **Deletes the original MP3s.** |
-| `update [file\|N]` | `update` | Re-split (asks for min pause in ms), re-transcribe and re-furiganate **one** file, overwriting its texts. |
+| `process_incoming` | `process-incoming` | Full pipeline for new (non-`lb_`) files: convert → split → transcribe → AI-correct the new files → reindex → furiganate everything not yet furiganated. **Deletes the original MP3s.** |
+| `update [file\|N]` | `update` | Re-split (asks for min pause in ms), re-transcribe, AI-correct and re-furiganate **one** file, overwriting its texts. |
+| `correct` | `correct` | LLM correction of the transcript of one file picked from the menu (segments not corrected yet). |
 | `furiganate` | `furiganate` | LLM furigana for one file picked from the menu. |
 | `reindex` | `reindex` | Rebuild `index.json` for a code. |
 | `list` | `list` | Numbered file list (the number works as the `update` argument). |
@@ -149,8 +161,8 @@ Environment variables (see `example.env`; it is incomplete — these are all the
 - Most `pg.py` commands open a **curses menu** and/or call `input()`; they hang or crash without a
   real TTY. Set `CODE=...` and pass the file argument where supported, or test the underlying
   `core` functions directly instead of going through the CLI.
-- Anything that transcribes loads Whisper `large` (multi-GB model, slow). Anything that furiganates
-  spends money on the LLM API.
+- Anything that transcribes loads Whisper `large` (multi-GB model, slow). Anything that corrects or
+  furiganates spends money on the LLM API.
 - `process_incoming` removes source MP3s, `normalize_volumes` and `update` overwrite data in place,
   and `make upload` rsyncs with `--delete` to the live site. `audio_db/` is **not in git**, so there
   is no undo. Work on a copy (e.g. under the scratch/`temp` dir with `AUDIO_SOURCE_PATH` pointed at

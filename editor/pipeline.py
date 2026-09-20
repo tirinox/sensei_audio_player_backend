@@ -33,8 +33,24 @@ class FakeFuriganator:
         return self.generate_furigana([sentence])[0]
 
 
+class FakeCorrector:
+    def correct(self, sentences):
+        time.sleep(1.5)
+        return [sentence.replace('テスト', 'テスト、').replace('を書く', 'を描く') for sentence in sentences]
+
+    def correct_one(self, sentences, index, window=4):
+        return self.correct([sentences[index]])[0]
+
+
 def get_recognizer():
     return FakeRecognizer() if FAKE_AI else None  # None: fill_text_for loads Whisper once and keeps it
+
+
+def get_corrector():
+    if FAKE_AI:
+        return FakeCorrector()
+    from core.correction_neural import CorrectionNeural
+    return CorrectionNeural.from_env()
 
 
 def get_furiganator():
@@ -94,6 +110,40 @@ def transcribe(job, jobs):
     fill_text_for(seg, sr=get_recognizer(), on_progress=lambda done, total: jobs.set_progress(job, done, total))
 
 
+def correct(job, jobs):
+    """AI correction of the plain texts; only the segments not corrected yet (all=True: every segment)"""
+    from core.correction_neural import correct_segments
+
+    mp3_path, seg = load_segments(job)
+    backup.make_backup(mp3_path, label='correct')
+    checked, changed = correct_segments(seg, get_corrector(), redo=job.params.get('all', False))
+    job.data = {"checked": checked, "changed": changed}
+
+
+def correct_segment(job, jobs):
+    """One segment, with its neighbours as the context. If it had furigana and the text changed, furigana is redone"""
+    mp3_path, seg = load_segments(job)
+    i, start, end = job.params['i'], job.params['start'], job.params['end']
+    if not 0 <= i < len(seg.segments) or (seg.segments[i]['start'], seg.segments[i]['end']) != (start, end):
+        raise ValueError("The segments were changed meanwhile")
+    if not seg.segments[i].get('text'):
+        raise ValueError("The segment has no text")
+
+    # empty segments are skipped, so the index in the list of sentences differs
+    indices = [n for n, s in enumerate(seg.segments) if s.get('text')]
+    sentences = [seg.plain_text(n) for n in indices]
+    corrected = get_corrector().correct_one(sentences, indices.index(i))
+
+    had_furigana = 'original_text' in seg.segments[i]
+    backup.make_backup(mp3_path, label='correct')
+    changed = seg.set_correction(i, corrected.strip())
+    if changed and had_furigana and 'original_text' not in seg.segments[i]:
+        seg.set_furigana(i, get_furiganator().generate_furigana_one(corrected.strip()).strip())
+    seg.save()
+    job.data = {"checked": 1, "changed": int(changed)}
+    print("Changed" if changed else "No changes")
+
+
 def furigana(job, jobs):
     """Only the segments that are not furiganated yet (all=True: every segment, from its plain text)"""
     mp3_path, seg = load_segments(job)
@@ -103,7 +153,7 @@ def furigana(job, jobs):
         print("Nothing to furiganate")
         return
 
-    sentences = [seg.segments[i].get('original_text', seg.segments[i]['text']) for i in targets]
+    sentences = [seg.plain_text(i) for i in targets]
     lines = get_furiganator().generate_furigana(sentences)
     lines = [line for line in lines if line.strip()]
     if len(lines) != len(sentences):
@@ -121,8 +171,7 @@ def furigana_segment(job, jobs):
     if not 0 <= i < len(seg.segments) or (seg.segments[i]['start'], seg.segments[i]['end']) != (start, end):
         raise ValueError("The segments were changed meanwhile")
 
-    segment = seg.segments[i]
-    sentence = segment.get('original_text', segment['text'])
+    sentence = seg.plain_text(i)
     if not sentence:
         raise ValueError("The segment has no text")
 
@@ -225,6 +274,8 @@ HANDLERS = {
     "convert": convert,
     "split": split,
     "transcribe": transcribe,
+    "correct": correct,
+    "correct_segment": correct_segment,
     "furigana": furigana,
     "furigana_segment": furigana_segment,
     "reindex": reindex,

@@ -73,6 +73,8 @@
                     <span class="step" :class="current.processed ? 'ok' : 'todo'">converted</span>
                     <span class="step" :class="current.n_segments ? 'ok' : 'todo'">split · {{ current.n_segments }}</span>
                     <span class="step" :class="stepClass(current.n_text, current.n_segments)">text · {{ current.n_text }}/{{ current.n_segments }}</span>
+                    <span class="step" :class="stepClass(current.n_corrected, current.n_segments)"
+                          title="AI correction of the transcript; optional, old files were never corrected">corrected · {{ current.n_corrected }}/{{ current.n_segments }}</span>
                     <span class="step" :class="stepClass(current.n_furigana, current.n_segments)">furigana · {{ current.n_furigana }}/{{ current.n_segments }}</span>
                     <span class="step" :class="current.index_stale || !current.in_index ? 'todo' : 'ok'">indexed</span>
                 </div>
@@ -81,18 +83,20 @@
             <section class="pipeline">
                 <template v-if="!current.processed">
                     <button @click="submitJob('convert')" :disabled="locked">Convert</button>
-                    <button class="primary" @click="submitJob('convert', current.name, {}, ['split', 'transcribe', 'furigana'])" :disabled="locked"
-                            title="Convert, split, transcribe and furiganate">Process fully</button>
+                    <button class="primary" @click="submitJob('convert', current.name, {}, ['split', 'transcribe', 'correct', 'furigana'])" :disabled="locked"
+                            title="Convert, split, transcribe, correct and furiganate">Process fully</button>
                     <span class="muted">The original goes to backups/originals, the converted copy gets the lb_ prefix</span>
                 </template>
                 <template v-else>
                     <button @click="openSplit(-1)" :disabled="locked" :class="{on: split.open && split.index < 0}">Split…</button>
                     <button @click="submitJob('transcribe')" :disabled="locked || current.n_text >= current.n_segments"
                             title="Whisper for the segments without text">Transcribe · {{ current.n_segments - current.n_text }} empty</button>
+                    <button @click="submitJob('correct', current.name, {}, current.n_furigana ? ['furigana'] : [])" :disabled="locked || !uncorrectedCount"
+                            title="LLM fixes recognition errors: wrong homophones, kana/kanji, numbers, punctuation. Changed segments lose their furigana, so it is redone after that if the file had any">Correct · {{ uncorrectedCount }} unchecked</button>
                     <button @click="submitJob('furigana')" :disabled="locked || !plainCount"
                             title="LLM furigana for the segments that have text but no furigana">Furigana · {{ plainCount }} plain</button>
-                    <button v-if="!current.n_segments" class="primary" @click="submitJob('split', current.name, {}, ['transcribe', 'furigana'])"
-                            :disabled="locked" title="Split with the default parameters, transcribe and furiganate">Process fully</button>
+                    <button v-if="!current.n_segments" class="primary" @click="submitJob('split', current.name, {}, ['transcribe', 'correct', 'furigana'])"
+                            :disabled="locked" title="Split with the default parameters, transcribe, correct and furiganate">Process fully</button>
                 </template>
                 <span v-if="current.busy" class="busy-note"><span class="dot spin no_text"></span> a job is queued or running for this file, editing is locked</span>
             </section>
@@ -116,7 +120,7 @@
                     <button @click="closeSplit()">Cancel</button>
                     <button @click="applySplit(false)" :disabled="locked || !canApplySplit">Apply</button>
                     <button class="primary" @click="applySplit(true)" :disabled="locked || !canApplySplit"
-                            title="Apply, then transcribe the empty segments and furiganate them">Apply + transcribe + furigana</button>
+                            title="Apply, then transcribe the empty segments, correct and furiganate them">Apply + process</button>
                 </div>
             </section>
 
@@ -176,17 +180,24 @@
                         <div v-if="s.text" class="seg-text" v-html="rubyHtml(s.text)"></div>
                         <div v-else class="seg-text muted">no text</div>
                         <div v-if="s.original_text !== undefined" class="seg-original">{{ s.original_text }}</div>
+                        <div v-if="wasChanged(s)" class="seg-diff" @click.stop>
+                            <span class="muted">AI fix:</span> <span v-html="diffHtml(s.raw_text, plainText(s))"></span>
+                            <a href="#" @click.prevent="revertCorrection(i)" v-if="!locked" title="Back to the text before the correction">revert</a>
+                        </div>
                     </div>
 
                     <div class="seg-side" @click.stop>
                         <div class="seg-meta">
                             <span>{{ fmtTime(s.start / 1000, true) }} – {{ fmtTime(s.end / 1000, true) }} · {{ ((s.end - s.start) / 1000).toFixed(1) }} s</span>
+                            <span v-if="s.raw_text !== undefined" class="muted" title="Checked by the AI correction">✓ checked</span>
                             <span class="badge" :class="s.original_text !== undefined ? 'done' : (s.text ? 'no_furigana' : 'no_text')">
                                 {{ s.original_text !== undefined ? 'furigana' : (s.text ? 'plain' : 'empty') }}
                             </span>
                         </div>
                         <div class="seg-actions">
                             <button @click="startEdit(i)" :disabled="locked" title="Edit the text (double click)">✎</button>
+                            <button @click="submitJob('correct_segment', current.name, {i, start: s.start, end: s.end})" :disabled="locked || !s.text"
+                                    title="AI correction of this segment (LLM), with the neighbours as the context">✦</button>
                             <button @click="submitJob('furigana_segment', current.name, {i, start: s.start, end: s.end})" :disabled="locked || !s.text"
                                     title="Make furigana for this segment again (LLM), from its plain text">ふ</button>
                             <button @click="cut(i, false)" :disabled="locked" title="Cut at the longest pause inside">✂ auto</button>

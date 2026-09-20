@@ -169,6 +169,11 @@ def drop_furigana(code: str, name: str, i: int, ref: SegmentRef):
     return edit_segments(code, name, i, ref, 'text', lambda seg, _: seg.drop_furigana(i))
 
 
+@app.post("/api/codes/{code}/files/{name}/segments/{i}/revert_correction")
+def revert_correction(code: str, name: str, i: int, ref: SegmentRef):
+    return edit_segments(code, name, i, ref, 'text', lambda seg, _: seg.revert_correction(i))
+
+
 @app.post("/api/codes/{code}/files/{name}/segments/{i}/split")
 def split_segment(code: str, name: str, i: int, request: SplitRequest):
     def change(seg, mp3_path):
@@ -285,7 +290,7 @@ def resplit_segment(code: str, name: str, i: int, request: ResplitSegment):
 
 # ---- jobs: the slow steps (Whisper, LLM, ffmpeg) run one by one in the background ----
 
-FILE_JOB_KINDS = ('convert', 'split', 'transcribe', 'furigana', 'furigana_segment')
+FILE_JOB_KINDS = ('convert', 'split', 'transcribe', 'correct', 'correct_segment', 'furigana', 'furigana_segment')
 
 
 UPLOAD_JOB_KINDS = ('upload_dry', 'upload')

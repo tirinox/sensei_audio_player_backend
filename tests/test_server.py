@@ -200,6 +200,35 @@ def test_transcribe_then_furigana(mp3_path, segments, fake_ai):
     assert client.get(URL).json()['stage'] == 'done'
 
 
+def test_correct_jobs(mp3_path, segments, fake_ai):
+    segments[0].update(text='[絵](え)を[書](か)く。', original_text='絵を書く。')
+    segments[1]['text'] = 'テストの水。'
+    segments.append({"start": 5200, "end": 5400, "text": "[テスト](てすと)です。", "original_text": "テストです。"})
+    with open(mp3_path + '_segments.json', 'w') as f:
+        json.dump({"version": 3, "length": 5.5, "segments": segments}, f, ensure_ascii=False)
+
+    # one segment: a word is changed, so furigana is made again for the corrected text
+    assert submit('correct_segment', params={"i": 0, **ref(segments[0])}).status_code == 200
+    assert wait_jobs()[-1]['data'] == {"checked": 1, "changed": 1}
+    result = saved_segments(mp3_path)
+    assert result[0] == {**ref(segments[0]), "text": "絵を描く。＊", "original_text": "絵を描く。", "raw_text": "絵を書く。"}
+    assert 'raw_text' not in result[1]
+
+    # the file: only what is not corrected yet
+    assert submit('correct').status_code == 200
+    assert wait_jobs()[-1]['data'] == {"checked": 2, "changed": 2}
+    result = saved_segments(mp3_path)
+    assert result[1] == {**ref(segments[1]), "text": "テスト、の水。", "raw_text": "テストの水。"}
+    # only punctuation is changed: the furigana is kept
+    assert result[2] == {**ref(segments[2]), "text": "[テスト](てすと)、です。", "original_text": "テスト、です。",
+                         "raw_text": "テストです。"}
+    details = client.get(URL).json()
+    assert details['n_corrected'] == 3 and details['stage'] == 'no_furigana'
+
+    reverted = client.post(f'{URL}/segments/1/revert_correction', json=ref(segments[1])).json()['segments'][1]
+    assert reverted == {**ref(segments[1]), "text": "テストの水。", "raw_text": "テストの水。"}
+
+
 def test_furigana_one_segment(mp3_path, segments, fake_ai):
     params = {"i": 0, **ref(segments[0])}
     assert submit('furigana_segment', params=params).status_code == 200
@@ -247,18 +276,18 @@ def test_convert_incoming(mp3_path, fake_ai):
     assert client.post(f'/api/codes/{CODE}/files/{quote("My Recording-7.mp3")}/split', json={}).status_code == 400
 
     response = client.post('/api/jobs', json={"kind": "convert", "code": CODE, "name": "My Recording-7.mp3",
-                                              "then": ["split", "transcribe", "furigana"]})
+                                              "then": ["split", "transcribe", "correct", "furigana"]})
     assert response.status_code == 200
     all_jobs = wait_jobs(30)
-    assert all_jobs[-4]['result'] == 'lb_7.mp3'
-    assert [(j['kind'], j['name'], j['status']) for j in all_jobs[-4:]] == [
-        ('convert', 'My Recording-7.mp3', 'done'), ('split', 'lb_7.mp3', 'done'),
-        ('transcribe', 'lb_7.mp3', 'done'), ('furigana', 'lb_7.mp3', 'done')]
+    assert all_jobs[-5]['result'] == 'lb_7.mp3'
+    assert [(j['kind'], j['name'], j['status']) for j in all_jobs[-5:]] == [
+        ('convert', 'My Recording-7.mp3', 'done'), ('split', 'lb_7.mp3', 'done'), ('transcribe', 'lb_7.mp3', 'done'),
+        ('correct', 'lb_7.mp3', 'done'), ('furigana', 'lb_7.mp3', 'done')]
 
     assert not os.path.exists(incoming)
     assert os.path.exists(os.path.join(BACKUP_PATH, 'originals', CODE, 'My Recording-7.mp3'))
     details = client.get(f'/api/codes/{CODE}/files/lb_7.mp3').json()
-    assert details['stage'] == 'done' and details['n_segments'] == 2
+    assert details['stage'] == 'done' and details['n_segments'] == 2 and details['n_corrected'] == 2
 
     os.remove(os.path.join(AUDIO_SOURCE_PATH, CODE, 'lb_7.mp3'))
     os.remove(os.path.join(AUDIO_SOURCE_PATH, CODE, 'lb_7.mp3_segments.json'))

@@ -66,7 +66,7 @@ class FuriganaNeural:
         self.model = model
         self.prompt = prompt.strip()
 
-    def _request_ai(self, prompt):
+    def _request_ai(self, prompt, temperature=0.7):
         messages = [
             {"role": "user", "content": prompt}
         ]
@@ -75,7 +75,7 @@ class FuriganaNeural:
         response_big = self.client.chat.completions.create(
             model=self.model,
             messages=messages,
-            temperature=0.7,
+            temperature=temperature,
             n=1,
             max_tokens=5000,
             extra_headers={"X-Title": "SenseiAudioCore"},
