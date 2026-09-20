@@ -19,7 +19,7 @@ def get_all_mp3(path):
     mp3_files = []
     for root, dirs, files in os.walk(path):
         for file in files:
-            if file.endswith(".mp3"):
+            if file.lower().endswith(".mp3"):
                 mp3_files.append(os.path.join(root, file))
     mp3_files.sort(reverse=True)
     return mp3_files

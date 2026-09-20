@@ -49,7 +49,9 @@ def convert_mp3_to_low_bitrate(file, normalize_volume=True, target_dbfs=NORMALIZ
 
     print(f'Found new file: {old_basename}')
     new_basename = normalize_filename(old_basename)
-    new_basename = f'lb_{new_basename}'
+    # force lowercase extension (.MP3 -> .mp3): indexer and frontend expect ".mp3"
+    stem, ext = os.path.splitext(new_basename)
+    new_basename = f'lb_{stem}{ext.lower()}'
     print(f'New name: {new_basename}. Converting to lower bitrate...')
     new_full_name = os.path.join(base_dir, new_basename)
 
